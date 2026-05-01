@@ -10,6 +10,7 @@
     "dev:server": "tsx --env-file-if-exists=.env watch src/server/index.ts",
     "dev:web": "vite",
     "build": "vite build",
+    "prestart": "vite build",
     "start": "tsx --env-file-if-exists=.env src/server/index.ts",
     "typecheck": "tsc --noEmit",
     "service:install": "node scripts/install-systemd.mjs",
