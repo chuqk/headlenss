@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react';
 
+type ClaudeStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
+
 type Session = {
   name: string;
   created: number;
   windows: number;
   attached: boolean;
+  claudeStatus?: ClaudeStatus;
 };
+
+function claudeIndicator(status?: ClaudeStatus): string {
+  switch (status) {
+    case 'busy': return '● Claude 実行中';
+    case 'idle': return '◯ Claude 待機';
+    case 'waiting-permission': return '⏸ 承認待ち';
+    case 'waiting-question': return '? 質問待ち';
+    default: return '';
+  }
+}
 
 export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -94,20 +107,24 @@ export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
         <div className="muted">no sessions yet</div>
       ) : (
         <ul className="session-list">
-          {sessions.map((s) => (
-            <li key={s.name}>
-              <button className="session-open" onClick={() => onOpen(s.name)}>
-                <span className="session-name">{s.name}</span>
-                <span className="session-meta">
-                  {s.windows} window{s.windows === 1 ? '' : 's'}
-                  {s.attached && ' • attached'}
-                </span>
-              </button>
-              <button className="session-kill" onClick={() => remove(s.name)} aria-label={`kill ${s.name}`}>
-                ✕
-              </button>
-            </li>
-          ))}
+          {sessions.map((s) => {
+            const cc = claudeIndicator(s.claudeStatus);
+            return (
+              <li key={s.name}>
+                <button className="session-open" onClick={() => onOpen(s.name)}>
+                  <span className="session-name">{s.name}</span>
+                  <span className="session-meta">
+                    {s.windows} window{s.windows === 1 ? '' : 's'}
+                    {s.attached && ' • attached'}
+                    {cc && <span className={`cc-indicator cc-${s.claudeStatus}`}> • {cc}</span>}
+                  </span>
+                </button>
+                <button className="session-kill" onClick={() => remove(s.name)} aria-label={`kill ${s.name}`}>
+                  ✕
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

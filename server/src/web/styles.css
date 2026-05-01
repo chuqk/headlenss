@@ -141,6 +141,20 @@ button {
   margin-top: 0.2rem;
 }
 
+.cc-indicator {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.cc-indicator.cc-busy {
+  color: #f5a623;
+}
+
+.cc-indicator.cc-waiting-permission,
+.cc-indicator.cc-waiting-question {
+  color: #e25555;
+}
+
 .session-kill {
   background: transparent;
   border: none;

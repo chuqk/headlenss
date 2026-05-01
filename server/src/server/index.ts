@@ -10,6 +10,7 @@ import { captureOutput, createSession, killSession, listSessions, sendKeys } fro
 import { handlePtyConnection } from './pty.ts';
 import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './asr/index.ts';
 import { claudeRouter } from './claude/router.ts';
+import { detectClaudeSessions } from './claude/process-detect.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = resolve(__dirname, '../../dist/web');
@@ -24,7 +25,16 @@ app.use('/api/*', cors());
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.get('/api/sessions', async (c) => {
-  return c.json({ sessions: await listSessions() });
+  const [sessions, detected] = await Promise.all([
+    listSessions(),
+    detectClaudeSessions().catch(() => []),
+  ]);
+  const detectedMap = new Map(detected.map((d) => [d.tmuxSessionName, d]));
+  const enriched = sessions.map((s) => ({
+    ...s,
+    claudeStatus: detectedMap.get(s.name)?.status,
+  }));
+  return c.json({ sessions: enriched });
 });
 
 app.post('/api/sessions', async (c) => {

@@ -6,7 +6,7 @@ export type ChatItem = {
   ts: number;
 };
 
-export type SessionStatus = 'idle' | 'waiting-permission' | 'waiting-question';
+export type SessionStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
 
 export type AskQuestionOption = {
   label: string;

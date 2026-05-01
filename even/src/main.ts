@@ -233,6 +233,7 @@ function claudeStatusMark(s: ClaudeSessionInfo): string {
   switch (s.status) {
     case 'waiting-permission': return '⏸'
     case 'waiting-question': return '?'
+    case 'busy': return '●'
     case 'idle':
     default: return ' '
   }

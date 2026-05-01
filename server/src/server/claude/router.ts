@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { detectClaudeSessions } from './process-detect.ts';
 import * as store from './store.ts';
 import { resolveTmuxSessionName } from './tmux-resolver.ts';
 import { extractLastAssistantText } from './transcript.ts';
-import type { AskQuestion, HookDecision, RespondInput } from './types.ts';
+import type { AskQuestion, HookDecision, RespondInput, SessionStatus } from './types.ts';
 
 export const claudeRouter = new Hono();
 
@@ -165,15 +166,44 @@ claudeRouter.post('/hooks/permission-request', async (c) => {
 
 // ───────── G2-facing endpoints ─────────
 
-claudeRouter.get('/claude/sessions', (c) => {
-  const sessions = store.listSessions().map((s) => ({
-    tmuxSessionName: s.tmuxSessionName,
-    cwd: s.cwd,
-    status: s.status,
-    startedAt: s.startedAt,
-    lastSeenAt: s.lastSeenAt,
-  }));
-  return c.json({ sessions });
+claudeRouter.get('/claude/sessions', async (c) => {
+  // hook 経由で記録されているセッション (チャット履歴あり)
+  const tracked = store.listSessions();
+  const trackedNames = new Set(tracked.map((s) => s.tmuxSessionName));
+
+  // ~/.claude/sessions/ レジストリから検出 (プラグインなしでも検出可)
+  const detected = await detectClaudeSessions();
+
+  const merged: Array<{
+    tmuxSessionName: string;
+    cwd: string;
+    status: SessionStatus;
+    startedAt: number;
+    lastSeenAt: number;
+  }> = [];
+
+  for (const s of tracked) {
+    merged.push({
+      tmuxSessionName: s.tmuxSessionName,
+      cwd: s.cwd,
+      status: s.status,
+      startedAt: s.startedAt,
+      lastSeenAt: s.lastSeenAt,
+    });
+  }
+
+  for (const d of detected) {
+    if (trackedNames.has(d.tmuxSessionName)) continue;
+    merged.push({
+      tmuxSessionName: d.tmuxSessionName,
+      cwd: d.cwd,
+      status: d.status,
+      startedAt: d.startedAt,
+      lastSeenAt: d.startedAt,
+    });
+  }
+
+  return c.json({ sessions: merged });
 });
 
 claudeRouter.get('/claude/sessions/:tmuxName/chat', (c) => {

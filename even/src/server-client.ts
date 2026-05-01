@@ -16,7 +16,7 @@ export type SendKeysOptions = {
   submit: boolean
 }
 
-export type ClaudeSessionStatus = 'idle' | 'waiting-permission' | 'waiting-question'
+export type ClaudeSessionStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question'
 
 export type ClaudeSessionInfo = {
   tmuxSessionName: string
