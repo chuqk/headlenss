@@ -234,7 +234,11 @@ function buildG2Content(): string {
 }
 
 function tailLines(text: string, n: number): string {
-  return text.split('\n').slice(-n).join('\n').replace(/[ \t]+$/gm, '')
+  // 行ごとに右側の空白を落とし、末尾の空行を全部捨ててから tail を取る。
+  // capture-pane は pane の高さぶんの空行を末尾に含むので、そのまま tail すると空が出る。
+  const lines = text.split('\n').map((l) => l.replace(/[ \t]+$/, ''))
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  return lines.slice(-n).join('\n')
 }
 
 function buildG2Footer(): string {
