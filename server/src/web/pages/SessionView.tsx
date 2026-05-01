@@ -3,6 +3,18 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+// 新WSプロトコル (server/pty.ts と対応):
+//   client → server: { type: 'attach', cols, rows } / { type: 'input', data } /
+//                    { type: 'resize', cols, rows } / { type: 'refresh' }
+//   server → client: { type: 'screen', serialized } / { type: 'output', data } /
+//                    { type: 'attached', cols, rows } / { type: 'exit', code }
+
+type ServerMsg =
+  | { type: 'screen'; serialized: string }
+  | { type: 'output'; data: string }
+  | { type: 'attached'; cols: number; rows: number }
+  | { type: 'exit'; code: number };
+
 export function SessionView({ sessionName, onBack }: { sessionName: string; onBack: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -14,6 +26,7 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       cursorBlink: true,
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       fontSize: 13,
+      scrollback: 5000,
       theme: {
         background: '#0e0e10',
         foreground: '#e6e6e6',
@@ -24,51 +37,124 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     term.open(container);
     fit.fit();
 
-    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${wsProto}://${window.location.host}/api/sessions/${encodeURIComponent(sessionName)}/pty`;
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
+    let ws: WebSocket | null = null;
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-      term.focus();
-    };
-
-    ws.onmessage = (ev) => {
-      if (typeof ev.data === 'string') {
-        term.write(ev.data);
-      } else {
-        term.write(new Uint8Array(ev.data as ArrayBuffer));
+    // ホイールで履歴を遡っている間は新規出力で勝手に最下部に飛ばないようにする。
+    // xterm.js の baseY/viewportY は非同期更新で誤判定するため、ホイール操作だけを信頼。
+    let userScrolledUp = false;
+    term.attachCustomWheelEventHandler((event) => {
+      if (event.deltaY < 0) {
+        userScrolledUp = true;
+      } else if (event.deltaY > 0) {
+        requestAnimationFrame(() => {
+          const buf = term.buffer.active;
+          if (buf.viewportY >= buf.baseY) userScrolledUp = false;
+        });
       }
-    };
-
-    ws.onclose = () => {
-      term.write('\r\n\x1b[31m[disconnected]\x1b[0m\r\n');
-    };
-
-    const onData = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      return true;
     });
 
-    const sendResize = () => {
-      try {
-        fit.fit();
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    // Shift+Enter は CSI u (\x1b[13;2u) で送る (extended-keys 対応シェル/Claude Code向け)
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.key === 'Enter' && event.shiftKey && event.type === 'keydown') {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'input', data: '\x1b[13;2u' }));
         }
-      } catch {
-        // ignore intermittent layout errors
+        return false;
+      }
+      return true;
+    });
+
+    const sendInput = (data: string) => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'input', data }));
       }
     };
-    window.addEventListener('resize', sendResize);
-    const ro = new ResizeObserver(sendResize);
+    const sendResize = (cols: number, rows: number) => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      }
+    };
+
+    const onDataDisp = term.onData(sendInput);
+    const onResizeDisp = term.onResize(({ cols, rows }) => sendResize(cols, rows));
+
+    const fitAndPushSize = () => {
+      try {
+        fit.fit();
+        sendResize(term.cols, term.rows);
+      } catch { /* ignore intermittent layout errors */ }
+    };
+
+    const openWs = () => {
+      if (disposed) return;
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = `${proto}://${window.location.host}/api/sessions/${encodeURIComponent(sessionName)}/pty`;
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        if (disposed) { ws?.close(); return; }
+        ws!.send(JSON.stringify({ type: 'attach', cols: term.cols, rows: term.rows }));
+        term.focus();
+      };
+
+      ws.onmessage = (ev) => {
+        let msg: ServerMsg;
+        try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '') as ServerMsg; }
+        catch { return; }
+        switch (msg.type) {
+          case 'screen': {
+            // 再接続時 / 初回接続時に画面まるごと復元
+            term.reset();
+            term.write(msg.serialized, () => {
+              if (!userScrolledUp) term.scrollToBottom();
+            });
+            break;
+          }
+          case 'output': {
+            term.write(msg.data, () => {
+              if (!userScrolledUp) term.scrollToBottom();
+            });
+            break;
+          }
+          case 'attached':
+            // 確定サイズで再フィット
+            requestAnimationFrame(() => fitAndPushSize());
+            break;
+          case 'exit':
+            term.write(`\r\n\x1b[33m[session exited: ${msg.code}]\x1b[0m\r\n`);
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        term.write('\r\n\x1b[31m[disconnected — retrying…]\x1b[0m\r\n');
+        reconnectTimer = setTimeout(() => { if (!disposed) openWs(); }, 1500);
+      };
+
+      ws.onerror = () => {
+        // onclose が続けて呼ばれるので再接続はそちらで
+      };
+    };
+
+    openWs();
+
+    const onWindowResize = () => fitAndPushSize();
+    window.addEventListener('resize', onWindowResize);
+    const ro = new ResizeObserver(() => fitAndPushSize());
     ro.observe(container);
 
     return () => {
-      window.removeEventListener('resize', sendResize);
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      window.removeEventListener('resize', onWindowResize);
       ro.disconnect();
-      onData.dispose();
-      ws.close();
+      onDataDisp.dispose();
+      onResizeDisp.dispose();
+      ws?.close();
       term.dispose();
     };
   }, [sessionName]);

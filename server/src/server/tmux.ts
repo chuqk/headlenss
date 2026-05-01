@@ -45,10 +45,38 @@ export async function listSessions(): Promise<Session[]> {
   }
 }
 
+/**
+ * tmux サーバ・セッションを headless ブラウザビューに最適化する設定を流す。
+ *  - mouse off : ホイール等のマウスイベントを tmux に渡さない (ブラウザ側 xterm.js の scrollback を効かせるため)
+ *  - status off: ステータスバーは Web UI で別表示するので非表示
+ *  - extended-keys on: Shift+Enter 等の拡張キーを正しく届ける (server scope)
+ */
+export async function configureSessionForHeadless(name: string): Promise<void> {
+  validateName(name);
+  // server option (全セッション共通)
+  try { await exec('tmux', ['set', '-s', 'extended-keys', 'on']); } catch { /* ignore */ }
+  // session option
+  try { await exec('tmux', ['set', '-t', name, 'mouse', 'off']); } catch { /* ignore */ }
+  try { await exec('tmux', ['set', '-t', name, 'status', 'off']); } catch { /* ignore */ }
+}
+
 export async function createSession(name: string): Promise<void> {
   validateName(name);
   const home = process.env.HOME ?? '/';
   await exec('tmux', ['new-session', '-d', '-c', home, '-s', name], { cwd: home });
+  await configureSessionForHeadless(name);
+}
+
+/** セッションが無ければ作る (新規作成時は headless 用に設定する) */
+export async function ensureSession(name: string): Promise<void> {
+  validateName(name);
+  try {
+    await exec('tmux', ['has-session', '-t', name]);
+    // 既存: 念のため設定を当て直す
+    await configureSessionForHeadless(name);
+  } catch {
+    await createSession(name);
+  }
 }
 
 export async function killSession(name: string): Promise<void> {
