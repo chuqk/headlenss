@@ -20,9 +20,7 @@
 
 ## インストール & 起動
 
-### A. クラウドASR を使う構成 — ビルドツール不要、最速
-
-#### A-1. Speechmatics(多言語、月480分無料、レイテンシ短い)
+### 1. 依存をインストール
 
 ```bash
 git clone <repo-url> headlenss
@@ -30,46 +28,72 @@ cd headlenss/server
 
 npm install
 npm run build
-
-ASR_BACKEND=speechmatics \
-SPEECHMATICS_API_KEY=your_api_key_here \
-SPEECHMATICS_LANG=ja \
-npm start
 ```
 
-- メリット: ビルドツール/setup不要、月480分無料(個人開発期はほぼ無料)、JFKサンプル4秒程度
-- デメリット: 従量課金(無料枠超過後は約 $1.35/時間 enhanced)、音声がクラウドへ
-- **日本語精度はAmiVoiceより一段下**(AmiVoiceは国産特化なので)
-
-#### A-2. AmiVoice(日本語特化、最高精度)
+### 2. `.env` で設定
 
 ```bash
-ASR_BACKEND=amivoice \
-AMIVOICE_APPKEY=your_appkey_here \
-npm start
+cp .env.example .env
+$EDITOR .env   # API key などを記入
 ```
 
-- メリット: 日本語精度トップクラス、固有名詞・敬語に強い
-- デメリット: 月60分無料、それ以降従量課金(約 ¥0.04/秒)、クレカ登録必須
+選べる ASR バックエンド:
 
-### B. whisper.cpp (ローカルASR) を使う構成 — オフライン、無料
+| バックエンド | install手間 | 速度 | 精度(日本語) | コスト |
+|---|---|---|---|---|
+| `speechmatics`(クラウド) | API key だけ | 速い | ○ | 月480分無料、以降約 $1.35/h |
+| `amivoice`(クラウド) | API key + クレカ登録 | 速い | ◎(国産) | 月60分無料、以降約 ¥158/h |
+| `whisper-cpp`(ローカル) | `npm run setup` でビルド + ~600MB DL | GPU有→速い、CPUのみ→遅い | ◎(large-v3-turbo) | 無料 |
+
+`.env` の例(Speechmaticsを使う場合):
+```
+ASR_BACKEND=speechmatics
+SPEECHMATICS_API_KEY=xxxxxxxx
+SPEECHMATICS_LANG=ja
+```
+
+`whisper-cpp` を使う場合は事前に:
+```bash
+npm run setup    # whisper.cpp ビルド + ggml-large-v3-turbo-q5_0 DL (初回のみ)
+```
+ビルドツール(`build-essential` + `cmake`)が必要。詳細は[Required tools](#必要なもの)参照。
+
+### 3. 起動方法を選ぶ
+
+#### A. 開発・手動起動
 
 ```bash
-git clone <repo-url> headlenss
-cd headlenss/server
-
-npm install        # Node依存関係をインストール
-npm run setup      # whisper.cpp をビルド + Whisperモデルをダウンロード (初回のみ、~600MBのDLあり)
-npm run build      # Web UI をビルド
-npm start          # サーバー起動 (デフォルト: 0.0.0.0:3000)
+npm start           # フォアグラウンドで起動
+# Ctrl-C で停止
 ```
 
 ブラウザで `http://localhost:3000/` を開けばtmuxセッション一覧が表示される。
 
-`npm run setup` は冪等なので、再実行しても無駄な作業は走らない。
+#### B. systemd サービスとして常駐(Linux推奨)
 
-- メリット: オフライン動作、データ外部送信なし、ランニングコスト無料
-- デメリット: モデル格納に~600MB、ビルドツール必要、CPU推論が**GPU/Apple Silicon無し環境では遅い**(large-v3-turboで30秒の音声を約30秒で処理)
+ログアウト/再起動を跨いで自動起動させたい場合:
+
+```bash
+npm run service:install     # ~/.config/systemd/user/headlenss.service を作成 + 起動
+npm run service:status      # ステータス確認
+npm run service:logs        # ログをライブで見る
+```
+
+再起動後・ログアウト後も自動で動かしたければ、**1回だけ** sudo コマンドを実行:
+```bash
+sudo loginctl enable-linger $USER
+```
+
+これでマシン起動時に自動で headlenss が立ち上がるようになる。`.env` 内の値はサービスにそのまま読み込まれる(systemd unit が `EnvironmentFile=server/.env` を見ている)。
+
+サービスの基本操作:
+```bash
+systemctl --user restart headlenss
+systemctl --user stop headlenss
+systemctl --user disable headlenss   # 自動起動を解除
+```
+
+> **macOS** で常駐させたい場合は systemd ではなく launchd を使う必要があります(現状 README では未サポート、tmux常駐で代用してください: `tmux new-session -d -s headlenss-server "cd path/to/server && npm start"`)。
 
 ## 開発モード
 
@@ -271,7 +295,10 @@ server/
 │       ├── pages/
 │       └── styles.css
 ├── scripts/
-│   └── setup-whisper.mjs   # whisper.cpp ビルド & モデルDL (npm run setup)
+│   ├── setup-whisper.mjs           # whisper.cpp ビルド & モデルDL (npm run setup)
+│   ├── install-systemd.mjs         # systemd --user サービス導入 (npm run service:install)
+│   └── headlenss.service.template  # systemd unit テンプレ
+├── .env.example            # `.env` の雛形 (.env はgitignore)
 ├── vendor/whisper.cpp/     # cloneされたwhisper.cpp (gitignore)
 ├── models/                 # Whisperモデルファイル (gitignore)
 ├── dist/web/               # `npm run build` の出力先
