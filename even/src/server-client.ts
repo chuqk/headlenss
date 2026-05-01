@@ -1,5 +1,6 @@
 // headlenssサーバ (server/) とのHTTPクライアント。
 // Speechmaticsから受け取ったテキストを tmux session に流し込むのが主目的。
+// 加えて Claude Code hook 連携用エンドポイント (/api/claude/*) も叩く。
 
 import { trimTrailingSlash } from './settings'
 
@@ -14,6 +15,47 @@ export type SendKeysOptions = {
   text: string
   submit: boolean
 }
+
+export type ClaudeSessionStatus = 'idle' | 'waiting-permission' | 'waiting-question'
+
+export type ClaudeSessionInfo = {
+  tmuxSessionName: string
+  cwd: string
+  status: ClaudeSessionStatus
+  startedAt: number
+  lastSeenAt: number
+}
+
+export type ChatRole = 'user' | 'assistant'
+
+export type ChatItem = {
+  role: ChatRole
+  text: string
+  ts: number
+}
+
+export type AskQuestionOption = { label: string; description?: string }
+
+export type AskQuestion = {
+  header?: string
+  question: string
+  multiSelect?: boolean
+  options?: AskQuestionOption[]
+}
+
+export type Pending = {
+  id: string
+  kind: 'permission' | 'question'
+  hookEvent: 'PreToolUse' | 'PermissionRequest'
+  toolName: string
+  toolInput: unknown
+  questions?: AskQuestion[]
+  createdAt: number
+}
+
+export type RespondInput =
+  | { kind: 'permission'; decision: 'allow' | 'deny'; message?: string }
+  | { kind: 'question'; answers: Array<{ question: string; option: string }> }
 
 export class HeadlenssClient {
   constructor(private base: string) {}
@@ -83,5 +125,42 @@ export class HeadlenssClient {
     }
     const data = (await res.json()) as { text: string }
     return data.text
+  }
+
+  // ── Claude Code hook 連携 ──────────────────────────────────────────────
+
+  async listClaudeSessions(): Promise<ClaudeSessionInfo[]> {
+    const res = await fetch(this.url('/api/claude/sessions'))
+    if (!res.ok) throw new Error(`listClaudeSessions HTTP ${res.status}`)
+    const data = (await res.json()) as { sessions: ClaudeSessionInfo[] }
+    return data.sessions
+  }
+
+  async getClaudeChat(name: string): Promise<ChatItem[]> {
+    const res = await fetch(this.url(`/api/claude/sessions/${encodeURIComponent(name)}/chat`))
+    if (res.status === 404) return []
+    if (!res.ok) throw new Error(`getClaudeChat HTTP ${res.status}`)
+    const data = (await res.json()) as { chat: ChatItem[] }
+    return data.chat
+  }
+
+  async getClaudePending(name: string): Promise<Pending | null> {
+    const res = await fetch(this.url(`/api/claude/sessions/${encodeURIComponent(name)}/pending`))
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`getClaudePending HTTP ${res.status}`)
+    const data = (await res.json()) as { pending: Pending | null }
+    return data.pending
+  }
+
+  async respondClaude(name: string, input: RespondInput): Promise<void> {
+    const res = await fetch(this.url(`/api/claude/sessions/${encodeURIComponent(name)}/respond`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`respondClaude HTTP ${res.status}: ${body.slice(0, 200)}`)
+    }
   }
 }

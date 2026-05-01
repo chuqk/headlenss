@@ -9,7 +9,13 @@ import {
 } from './audio'
 import { onEvenHubEvent, setEventHandlers } from './events'
 import { initRenderer, resetPageState, showScreen, updateContent, updateFooter } from './renderer'
-import { HeadlenssClient, type Session } from './server-client'
+import {
+  HeadlenssClient,
+  type ChatItem,
+  type ClaudeSessionInfo,
+  type Pending,
+  type Session,
+} from './server-client'
 import {
   DEFAULT_SETTINGS,
   loadSettings,
@@ -86,11 +92,16 @@ const logEl = document.getElementById('log') as HTMLPreElement
 //                                     ↑doubleClick (戻る)
 //   idle ──click──> recording ──click──> pending ──↑scroll──> sending ──> idle
 //                                              └──↓scroll──> idle (破棄)
-type Phase = 'boot' | 'unconfigured' | 'rootlist' | 'idle' | 'recording' | 'finalizing' | 'pending' | 'sending' | 'error'
+type Phase =
+  | 'boot' | 'unconfigured' | 'rootlist' | 'idle'
+  | 'recording' | 'finalizing' | 'pending' | 'sending'
+  | 'cc-response'  // Claude Code の承認/質問待ちに応答する画面
+  | 'error'
 
-const TMUX_OUTPUT_LINES = 200          // capture-pane で取得する行数 (scrollback 余裕分)
-const TMUX_OUTPUT_DISPLAY_LINES = 8    // G2レンズに出す末尾行数 (288pxに収まる量)
-const TMUX_POLL_INTERVAL_MS = 2000     // 出力ポーリング間隔
+const TMUX_OUTPUT_LINES = 200          // (legacy) capture-pane 用 — 現状未使用
+const CHAT_DISPLAY_LINES = 8           // G2レンズに出す chat 行数 (288pxに収まる量)
+const CHAT_WRAP_WIDTH = 44             // チャット行を word-wrap する幅 (even-toolkit 流)
+const CC_POLL_INTERVAL_MS = 1500       // Claude sessions / chat / pending のポーリング間隔
 const ROOT_LIST_VISIBLE = 8            // G2 root 画面に同時表示するセッション数
 
 type HistoryEntry = {
@@ -117,11 +128,18 @@ let probeDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let rtSession: SpeechmaticsRT | null = null
 let liveTranscript = '' // 録音中のpartial+final結合表示用
 let pendingText = ''    // 確定待ちのテキスト (送信 or 破棄選択前)
-let tmuxOutput = ''     // 直近取得したtmux画面出力 (idle時にレンズへ表示)
+let tmuxOutput = ''     // (legacy) tmux 出力 — 現状ダッシュボードとレンズには使わない
 let outputPollTimer: ReturnType<typeof setInterval> | null = null
 let outputFetchOkLogged = false
-let scrollOffset = 0  // tmux出力の末尾から何行戻ったか (0=ライブ末尾)
-let rootCursor = 0    // rootlist 内のカーソル位置 (lastSessions[index])
+let scrollOffset = 0  // chat の末尾から何行戻ったか (0=ライブ末尾)
+let rootCursor = 0    // rootlist 内のカーソル位置 (claudeSessions[index])
+
+// Claude Code hook 連携
+let claudeSessions: ClaudeSessionInfo[] = []     // 起動中Claude Codeを持つtmuxセッション一覧
+let claudeChat: ChatItem[] = []                  // 現在選択中セッションのチャット履歴
+let claudePending: Pending | null = null         // 現在選択中セッションの承認/質問待ち
+let claudePollTimer: ReturnType<typeof setInterval> | null = null
+let respondCursor = 0                            // cc-response 画面のカーソル位置
 let g2RefreshLastAt = 0
 const client = new HeadlenssClient('')
 
@@ -138,7 +156,9 @@ function statusForCurrentPhase(): { dot: string; text: string } {
     case 'boot':
       return { dot: 'idle', text: 'Booting…' }
     case 'rootlist':
-      return { dot: 'ready', text: `Sessions (${lastSessions.length})` }
+      return { dot: 'ready', text: `Claude sessions (${claudeSessions.length})` }
+    case 'cc-response':
+      return { dot: 'busy', text: 'Claude 応答待ち' }
     case 'recording':
       return { dot: 'rec', text: `Recording ${getRecordingSeconds().toFixed(1)}s` }
     case 'finalizing':
@@ -200,12 +220,22 @@ function recomputePhase(): void {
 
 /** lastSessions に対して rootCursor が指す要素を、現在の選択 (settings.sessionName) に合わせる */
 function syncRootCursor(): void {
-  if (lastSessions.length === 0) {
+  if (claudeSessions.length === 0) {
     rootCursor = 0
     return
   }
-  const idx = lastSessions.findIndex((s) => s.name === settings.sessionName)
+  const idx = claudeSessions.findIndex((s) => s.tmuxSessionName === settings.sessionName)
   rootCursor = idx >= 0 ? idx : 0
+}
+
+/** Claude Code セッションの待機状態を1文字記号にする */
+function claudeStatusMark(s: ClaudeSessionInfo): string {
+  switch (s.status) {
+    case 'waiting-permission': return '⏸'
+    case 'waiting-question': return '?'
+    case 'idle':
+    default: return ' '
+  }
 }
 
 function updatePendingUI(): void {
@@ -224,13 +254,23 @@ function buildG2Content(): string {
     return buildRootListView()
   }
 
-  // idle時は tmux の末尾を画面いっぱい使って表示。ヘッダで縦を消費しない。
+  // idle時は Claude Code の chat (user発言とClaude返事) を画面いっぱい使って表示。
   if (phase === 'idle') {
-    if (tmuxOutput && tmuxOutput.trim()) {
-      return lensWindow(tmuxOutput, TMUX_OUTPUT_DISPLAY_LINES)
+    const formatted = formatChatLines(claudeChat, CHAT_WRAP_WIDTH)
+    if (formatted.length > 0) {
+      // pending があるなら 1 行目に notice
+      const notice = claudePending
+        ? (claudePending.kind === 'question' ? '? 質問待ち (clickで回答)' : '⏸ 承認待ち (clickで応答)')
+        : null
+      const window = chatWindow(formatted, CHAT_DISPLAY_LINES - (notice ? 1 : 0))
+      return notice ? [notice, ...window].join('\n') : window.join('\n')
     }
-    // tmux未取得 / 空のときは案内
-    return `[${settings.sessionName || 'no session'}]\n(no output yet)`
+    return `[${settings.sessionName || 'no session'}]\n(まだ発言なし)`
+  }
+
+  // Claude Code 承認/質問 待ちへの応答画面
+  if (phase === 'cc-response') {
+    return buildCcResponseView()
   }
 
   // それ以外の状態は状態 + 内容を表示
@@ -272,13 +312,12 @@ function tailLines(text: string, n: number): string {
   return normalizeOutput(text).slice(-n).join('\n')
 }
 
-/** G2 rootlist 画面: tmux 一覧 (visionote/g2/renderer.ts:444 displayList を踏襲) */
+/** G2 rootlist 画面: Claude Code 起動中の tmux 一覧 (待機状態は記号で示す) */
 function buildRootListView(): string {
-  const items = lastSessions
+  const items = claudeSessions
   if (items.length === 0) {
-    return '(no sessions)\n\nCreate one in app'
+    return '(Claude Code が動いている tmux が無い)\n\ntmux 内で `claude` を起動してください'
   }
-  // カーソルがウィンドウの中央付近に来るよう start を計算
   const total = items.length
   let start = rootCursor - Math.floor(ROOT_LIST_VISIBLE / 2)
   start = Math.max(0, start)
@@ -286,9 +325,95 @@ function buildRootListView(): string {
 
   const lines: string[] = []
   for (let i = start; i < Math.min(start + ROOT_LIST_VISIBLE, total); i++) {
-    lines.push((i === rootCursor ? '▶ ' : '　') + items[i].name)
+    const s = items[i]
+    const cursor = i === rootCursor ? '▶ ' : '  '
+    const mark = claudeStatusMark(s)
+    lines.push(`${cursor}${s.tmuxSessionName} ${mark}`)
   }
   return lines.join('\n')
+}
+
+/** Claude Code 承認/質問への応答画面 */
+function buildCcResponseView(): string {
+  if (!claudePending) return '(no pending)'
+  const lines: string[] = []
+  if (claudePending.kind === 'permission') {
+    lines.push(`⏸ ${claudePending.toolName} の承認`)
+    lines.push('')
+    const summary = summarizeToolInput(claudePending.toolInput).slice(0, CHAT_WRAP_WIDTH * 3)
+    if (summary) lines.push(summary)
+    lines.push('')
+    const opts = ['Allow', 'Deny']
+    for (let i = 0; i < opts.length; i++) {
+      lines.push((i === respondCursor ? '▶ ' : '  ') + opts[i])
+    }
+  } else {
+    const q = claudePending.questions?.[0]
+    if (!q) return '(question is empty)'
+    lines.push('? ' + q.question.slice(0, CHAT_WRAP_WIDTH))
+    lines.push('')
+    const opts = q.options ?? []
+    for (let i = 0; i < opts.length; i++) {
+      lines.push((i === respondCursor ? '▶ ' : '  ') + opts[i].label)
+    }
+  }
+  return lines.join('\n')
+}
+
+function summarizeToolInput(input: unknown): string {
+  if (input == null) return ''
+  if (typeof input === 'string') return input
+  try {
+    return JSON.stringify(input).replace(/[{}",]/g, ' ').replace(/\s+/g, ' ').trim()
+  } catch {
+    return ''
+  }
+}
+
+/** チャット項目をG2レンズ用に整形 (役割ごとの prefix + word-wrap、even-toolkit流) */
+function formatChatLines(items: ChatItem[], maxChars: number): string[] {
+  const out: string[] = []
+  for (const item of items) {
+    const prefix = item.role === 'user' ? '> ' : ''
+    const indent = ' '.repeat(prefix.length)
+    const text = item.text.replace(/\r/g, '').trim()
+    if (!text) continue
+    const paragraphs = text.split('\n')
+    let isFirst = true
+    for (const para of paragraphs) {
+      const wrapped = wrapText(para, maxChars - prefix.length)
+      for (const line of wrapped) {
+        out.push((isFirst ? prefix : indent) + line)
+        isFirst = false
+      }
+    }
+    out.push('')  // メッセージ間の区切り
+  }
+  while (out.length > 0 && out[out.length - 1] === '') out.pop()
+  return out
+}
+
+function wrapText(text: string, width: number): string[] {
+  if (width <= 0 || text.length <= width) return [text || '']
+  const out: string[] = []
+  let s = text
+  while (s.length > width) {
+    let cut = s.lastIndexOf(' ', width)
+    if (cut < width / 2) cut = width  // word boundary が極端に短ければハードブレーク
+    out.push(s.slice(0, cut).trimEnd())
+    s = s.slice(cut).trimStart()
+  }
+  if (s) out.push(s)
+  return out
+}
+
+/** chat 行配列を scrollOffset を考慮して n 行 window する */
+function chatWindow(lines: string[], n: number): string[] {
+  if (lines.length === 0) return []
+  const total = lines.length
+  const end = Math.max(n, total - scrollOffset)
+  const start = Math.max(0, end - n)
+  return lines.slice(start, end)
 }
 
 /** Lens 用: scrollOffset を考慮した表示ウィンドウ */
@@ -302,8 +427,9 @@ function lensWindow(text: string, n: number): string {
   return lines.slice(start, end).join('\n')
 }
 
-function maxScrollOffset(text: string): number {
-  return Math.max(0, normalizeOutput(text).length - TMUX_OUTPUT_DISPLAY_LINES)
+function maxChatScrollOffset(): number {
+  const formatted = formatChatLines(claudeChat, CHAT_WRAP_WIDTH)
+  return Math.max(0, formatted.length - CHAT_DISPLAY_LINES)
 }
 
 function isScrolled(): boolean {
@@ -312,16 +438,16 @@ function isScrolled(): boolean {
 
 function scrollBack(): void {
   if (phase !== 'idle') return
-  const max = maxScrollOffset(tmuxOutput)
+  const max = maxChatScrollOffset()
   if (max === 0) return
-  scrollOffset = Math.min(max, scrollOffset + TMUX_OUTPUT_DISPLAY_LINES)
+  scrollOffset = Math.min(max, scrollOffset + CHAT_DISPLAY_LINES)
   void refreshG2(true)
 }
 
 function scrollForward(): void {
   if (phase !== 'idle') return
   if (scrollOffset === 0) return
-  scrollOffset = Math.max(0, scrollOffset - TMUX_OUTPUT_DISPLAY_LINES)
+  scrollOffset = Math.max(0, scrollOffset - CHAT_DISPLAY_LINES)
   void refreshG2(true)
 }
 
@@ -332,8 +458,10 @@ function resetScroll(): void {
 function buildG2Footer(): string {
   switch (phase) {
     case 'rootlist':
-      if (lastSessions.length === 0) return 'No session'
-      return `Click: Open  ↑↓ Nav  (${rootCursor + 1}/${lastSessions.length})`
+      if (claudeSessions.length === 0) return 'No Claude Code session'
+      return `Click: Open  ↑↓ Nav  (${rootCursor + 1}/${claudeSessions.length})`
+    case 'cc-response':
+      return '↑↓ 選択  Click: 確定'
     case 'recording': return 'Click: Stop'
     case 'finalizing': return 'Finalizing…'
     case 'pending': return '↑ Send  ↓ Discard'
@@ -405,7 +533,7 @@ sessionPillsEl.addEventListener('click', (e) => {
     recomputePhase()
     tmuxOutput = ''
     resetScroll()
-    void refreshOutput()
+    void refreshClaudeData()
   }
 })
 
@@ -459,14 +587,34 @@ async function createAndSelectSession(name: string): Promise<void> {
   }
 }
 
-// ─── tmux output mirror ────────────────────────────────────────────────
+// ─── Claude Code セッション/チャット/承認待ち データ取得 ──────────────────
 function setOutputDisplay(text: string, kind: 'ok' | 'muted' | 'err'): void {
+  // dashboard 側のミラー欄。chat 表示用に再利用。
   tmuxOutputEl.textContent = text
   tmuxOutputEl.classList.toggle('muted', kind !== 'ok')
   tmuxOutputEl.classList.toggle('err', kind === 'err')
 }
 
-async function refreshOutput(): Promise<void> {
+/** Claude Code 起動中の tmux session 一覧を取得 (rootlist 用) */
+async function reloadClaudeSessions(): Promise<void> {
+  if (!serverProbeOk) return
+  try {
+    const next = await client.listClaudeSessions()
+    claudeSessions = next
+    // 現在選択中のセッション名がリストに無くなったら最初のものに切り替え (任意)
+    if (claudeSessions.length > 0 && !claudeSessions.some((s) => s.tmuxSessionName === settings.sessionName)) {
+      // ユーザに勝手に切り替えるのは控えめに: 設定を変えず、rootCursor だけ動かす
+    }
+    if (rootCursor >= claudeSessions.length) {
+      rootCursor = Math.max(0, claudeSessions.length - 1)
+    }
+  } catch (e) {
+    log(`listClaudeSessions error: ${(e as Error).message}`)
+  }
+}
+
+/** 現在選択中セッションの chat と pending を取得 (idle / cc-response 用) */
+async function refreshClaudeData(): Promise<void> {
   if (!serverProbeOk) {
     setOutputDisplay(`(server not reachable: ${serverErrorMsg || '?'})`, 'err')
     return
@@ -476,38 +624,43 @@ async function refreshOutput(): Promise<void> {
     return
   }
   try {
-    const text = await client.getOutput(settings.sessionName, TMUX_OUTPUT_LINES)
-    const changed = text !== tmuxOutput
-    // scrollback中なら、新しく増えた行ぶんオフセットを増やしてビューを固定する
+    const [chat, pending] = await Promise.all([
+      client.getClaudeChat(settings.sessionName),
+      client.getClaudePending(settings.sessionName),
+    ])
+    // chat: scrollback 中なら新着分だけオフセット繰り上げ
     if (scrollOffset > 0) {
-      const oldLen = normalizeOutput(tmuxOutput).length
-      const newLen = normalizeOutput(text).length
+      const oldLen = formatChatLines(claudeChat, CHAT_WRAP_WIDTH).length
+      const newLen = formatChatLines(chat, CHAT_WRAP_WIDTH).length
       const delta = newLen - oldLen
       if (delta > 0) {
-        const max = Math.max(0, newLen - TMUX_OUTPUT_DISPLAY_LINES)
+        const max = Math.max(0, newLen - CHAT_DISPLAY_LINES)
         scrollOffset = Math.min(max, scrollOffset + delta)
       }
     }
-    tmuxOutput = text
-    if (text.trim()) {
-      setOutputDisplay(tailLines(text, TMUX_OUTPUT_DISPLAY_LINES), 'ok')
+    claudeChat = chat
+    claudePending = pending
+    if (chat.length > 0) {
+      const lastUser = [...chat].reverse().find((c) => c.role === 'user')?.text ?? ''
+      const lastAssistant = [...chat].reverse().find((c) => c.role === 'assistant')?.text ?? ''
+      setOutputDisplay(
+        `${chat.length} messages\n` +
+        (lastUser ? `> ${lastUser.slice(0, 200)}\n` : '') +
+        (lastAssistant ? `${lastAssistant.slice(0, 200)}` : ''),
+        'ok',
+      )
       if (!outputFetchOkLogged) {
-        log(`getOutput ok: ${text.length} chars from "${settings.sessionName}"`)
+        log(`getClaudeChat ok: ${chat.length} items from "${settings.sessionName}"`)
         outputFetchOkLogged = true
       }
     } else {
-      setOutputDisplay(`(empty output from session "${settings.sessionName}")`, 'muted')
+      setOutputDisplay(`(no chat yet for "${settings.sessionName}")`, 'muted')
     }
-    // idle中は毎回レンズに反映 (ページが外で再描画された時にも復元できる)
-    if (phase === 'idle') void refreshG2(true)
-    void changed
+    if (phase === 'idle' || phase === 'cc-response') void refreshG2(true)
   } catch (e) {
     const msg = (e as Error).message
-    setOutputDisplay(
-      `error: ${msg}\nGET ${settings.serverBaseUrl}/api/sessions/${settings.sessionName}/output`,
-      'err',
-    )
-    log(`getOutput error: ${msg}`)
+    setOutputDisplay(`error: ${msg}`, 'err')
+    log(`refreshClaudeData error: ${msg}`)
     outputFetchOkLogged = false
   }
 }
@@ -515,13 +668,18 @@ async function refreshOutput(): Promise<void> {
 function startOutputPolling(): void {
   if (outputPollTimer) clearInterval(outputPollTimer)
   outputPollTimer = setInterval(() => {
-    // Recording / pending / sending / finalizing 中は取りに行かない
-    if (phase !== 'idle') return
-    void refreshOutput()
-  }, TMUX_POLL_INTERVAL_MS)
+    // Recording / pending / sending / finalizing 中は claude polling を止める
+    if (phase === 'recording' || phase === 'finalizing' || phase === 'pending' || phase === 'sending') return
+    if (phase === 'rootlist') {
+      void reloadClaudeSessions()
+    } else if (phase === 'idle' || phase === 'cc-response') {
+      void reloadClaudeSessions()
+      void refreshClaudeData()
+    }
+  }, CC_POLL_INTERVAL_MS)
 }
 
-reloadOutputBtn.addEventListener('click', () => { void refreshOutput() })
+reloadOutputBtn.addEventListener('click', () => { void refreshClaudeData() })
 
 async function killSession(name: string): Promise<void> {
   if (!confirm(`Kill session "${name}"?`)) return
@@ -1036,7 +1194,7 @@ async function confirmAndSend(): Promise<void> {
     resetScroll()
     recomputePhase()
     // 送信直後に出力ミラーを取り直し (反映を見える化)
-    void refreshOutput()
+    void refreshClaudeData()
   }
 }
 
@@ -1059,7 +1217,18 @@ async function toggleRecording(): Promise<void> {
   } else if (phase === 'rootlist') {
     openSelectedFromRoot()
   } else if (phase === 'idle') {
-    await startRecording()
+    // pending があるなら音声入力ではなく応答画面に遷移
+    if (claudePending) {
+      respondCursor = 0
+      phase = 'cc-response'
+      paintStatus()
+      void refreshG2(true)
+      updateRecordButton()
+    } else {
+      await startRecording()
+    }
+  } else if (phase === 'cc-response') {
+    await submitPendingResponse()
   } else {
     settingsDetails.open = true
   }
@@ -1068,26 +1237,73 @@ async function toggleRecording(): Promise<void> {
 // ─── rootlist ──────────────────────────────────────────────────────────
 function moveRootCursor(delta: number): void {
   if (phase !== 'rootlist') return
-  if (lastSessions.length === 0) return
-  rootCursor = (rootCursor + delta + lastSessions.length) % lastSessions.length
+  if (claudeSessions.length === 0) return
+  rootCursor = (rootCursor + delta + claudeSessions.length) % claudeSessions.length
   void refreshG2(true)
 }
 
 function openSelectedFromRoot(): void {
   if (phase !== 'rootlist') return
-  const sel = lastSessions[rootCursor]
+  const sel = claudeSessions[rootCursor]
   if (!sel) return
-  settings.sessionName = sel.name
+  settings.sessionName = sel.tmuxSessionName
   void persistSettings()
-  log(`Opened session: ${sel.name}`)
-  // session 画面へ
-  tmuxOutput = ''
+  log(`Opened Claude session: ${sel.tmuxSessionName}`)
+  claudeChat = []
+  claudePending = null
   resetScroll()
   phase = 'idle'
   paintStatus()
   void refreshG2(true)
   updateRecordButton()
-  void refreshOutput()
+  void refreshClaudeData()
+}
+
+function moveRespondCursor(delta: number): void {
+  if (phase !== 'cc-response') return
+  const total = pendingOptionCount()
+  if (total === 0) return
+  respondCursor = (respondCursor + delta + total) % total
+  void refreshG2(true)
+}
+
+function pendingOptionCount(): number {
+  if (!claudePending) return 0
+  if (claudePending.kind === 'permission') return 2
+  return claudePending.questions?.[0]?.options?.length ?? 0
+}
+
+async function submitPendingResponse(): Promise<void> {
+  if (phase !== 'cc-response' || !claudePending) return
+  const sessionName = settings.sessionName
+  if (!sessionName) return
+  try {
+    if (claudePending.kind === 'permission') {
+      const decision = respondCursor === 0 ? 'allow' : 'deny'
+      await client.respondClaude(sessionName, { kind: 'permission', decision })
+      log(`responded permission: ${decision}`)
+    } else {
+      const q = claudePending.questions?.[0]
+      const opt = q?.options?.[respondCursor]
+      if (q && opt) {
+        await client.respondClaude(sessionName, {
+          kind: 'question',
+          answers: [{ question: q.question, option: opt.label }],
+        })
+        log(`responded question: ${opt.label}`)
+      }
+    }
+  } catch (e) {
+    log(`respond error: ${(e as Error).message}`)
+  } finally {
+    claudePending = null
+    respondCursor = 0
+    phase = 'idle'
+    paintStatus()
+    updateRecordButton()
+    void refreshG2(true)
+    void refreshClaudeData()
+  }
 }
 
 function backToRoot(): void {
@@ -1176,16 +1392,29 @@ async function boot(): Promise<void> {
         if (phase === 'rootlist') moveRootCursor(-1)
         else if (phase === 'pending') void confirmAndSend()
         else if (phase === 'idle') scrollBack()
+        else if (phase === 'cc-response') moveRespondCursor(-1)
       },
       onScrollDown: () => {
         if (phase === 'rootlist') moveRootCursor(1)
         else if (phase === 'pending') discardPending()
         else if (phase === 'idle') scrollForward()
+        else if (phase === 'cc-response') moveRespondCursor(1)
       },
       onClick: () => { void toggleRecording() },
-      // 二重クリック: session 画面 → root に戻る
+      // 二重クリック: session 画面 → root に戻る、 root画面ではOSの終了ダイアログ
       onDoubleClick: () => {
         if (phase === 'idle') backToRoot()
+        else if (phase === 'cc-response') {
+          // 応答キャンセル → idle に戻る
+          phase = 'idle'
+          respondCursor = 0
+          paintStatus()
+          void refreshG2(true)
+          updateRecordButton()
+        } else if (phase === 'rootlist') {
+          // Even Hub 審査要件: ルート画面の double-tap は OS 終了ダイアログ
+          void bridge?.shutDownPageContainer(1)
+        }
       },
       onAudio: (pcm) => {
         if (phase !== 'recording') return
@@ -1202,7 +1431,7 @@ async function boot(): Promise<void> {
           } catch (err) {
             log(`re-render error: ${err}`)
           }
-          void refreshOutput()
+          void refreshClaudeData()
         })()
       },
       onForegroundExit: () => {
@@ -1258,7 +1487,10 @@ async function boot(): Promise<void> {
 
   // tmux 出力ポーリング (idle時のみ実行)
   startOutputPolling()
-  if (serverProbeOk) void refreshOutput()
+  if (serverProbeOk) {
+    void reloadClaudeSessions()
+    void refreshClaudeData()
+  }
 }
 
 boot().catch((err) => {
