@@ -81,14 +81,17 @@ const durationEl = document.getElementById('duration') as HTMLSpanElement
 const logEl = document.getElementById('log') as HTMLPreElement
 
 // ─── State ─────────────────────────────────────────────────────────────
-// 操作モデル:
+// 画面遷移:
+//   boot → (設定済) → rootlist ──click──> idle (selected session)
+//                                     ↑doubleClick (戻る)
 //   idle ──click──> recording ──click──> pending ──↑scroll──> sending ──> idle
 //                                              └──↓scroll──> idle (破棄)
-type Phase = 'boot' | 'unconfigured' | 'idle' | 'recording' | 'finalizing' | 'pending' | 'sending' | 'error'
+type Phase = 'boot' | 'unconfigured' | 'rootlist' | 'idle' | 'recording' | 'finalizing' | 'pending' | 'sending' | 'error'
 
 const TMUX_OUTPUT_LINES = 200          // capture-pane で取得する行数 (scrollback 余裕分)
 const TMUX_OUTPUT_DISPLAY_LINES = 8    // G2レンズに出す末尾行数 (288pxに収まる量)
 const TMUX_POLL_INTERVAL_MS = 2000     // 出力ポーリング間隔
+const ROOT_LIST_VISIBLE = 8            // G2 root 画面に同時表示するセッション数
 
 type HistoryEntry = {
   id: number
@@ -118,6 +121,7 @@ let tmuxOutput = ''     // 直近取得したtmux画面出力 (idle時にレン�
 let outputPollTimer: ReturnType<typeof setInterval> | null = null
 let outputFetchOkLogged = false
 let scrollOffset = 0  // tmux出力の末尾から何行戻ったか (0=ライブ末尾)
+let rootCursor = 0    // rootlist 内のカーソル位置 (lastSessions[index])
 let g2RefreshLastAt = 0
 const client = new HeadlenssClient('')
 
@@ -133,6 +137,8 @@ function statusForCurrentPhase(): { dot: string; text: string } {
   switch (phase) {
     case 'boot':
       return { dot: 'idle', text: 'Booting…' }
+    case 'rootlist':
+      return { dot: 'ready', text: `Sessions (${lastSessions.length})` }
     case 'recording':
       return { dot: 'rec', text: `Recording ${getRecordingSeconds().toFixed(1)}s` }
     case 'finalizing':
@@ -151,7 +157,7 @@ function statusForCurrentPhase(): { dot: string; text: string } {
       return { dot: 'idle', text: 'Configure session' }
     case 'idle':
     default:
-      return { dot: 'ready', text: 'Ready' }
+      return { dot: 'ready', text: `[${settings.sessionName || '?'}] Ready` }
   }
 }
 
@@ -162,6 +168,15 @@ function paintStatus(): void {
   activeSessionNameEl.textContent = settings.sessionName || '—'
 }
 
+function isReady(): boolean {
+  return Boolean(
+    bridge &&
+    settings.serverBaseUrl &&
+    settings.speechmaticsApiKey &&
+    serverProbeOk,
+  )
+}
+
 function recomputePhase(): void {
   // pendingは「ユーザの判断待ち」なので自動で抜けない
   if (
@@ -170,21 +185,27 @@ function recomputePhase(): void {
     phase === 'pending' ||
     phase === 'sending'
   ) return
-  if (
-    !bridge ||
-    !settings.serverBaseUrl ||
-    !settings.speechmaticsApiKey ||
-    !settings.sessionName ||
-    !serverProbeOk
-  ) {
+  if (!isReady()) {
     phase = 'unconfigured'
-  } else {
-    phase = 'idle'
+  } else if (phase !== 'rootlist' && phase !== 'idle') {
+    // boot or unconfigured から ready になった: rootlist へ
+    phase = 'rootlist'
+    syncRootCursor()
   }
   paintStatus()
   void refreshG2()
   updateRecordButton()
   updatePendingUI()
+}
+
+/** lastSessions に対して rootCursor が指す要素を、現在の選択 (settings.sessionName) に合わせる */
+function syncRootCursor(): void {
+  if (lastSessions.length === 0) {
+    rootCursor = 0
+    return
+  }
+  const idx = lastSessions.findIndex((s) => s.name === settings.sessionName)
+  rootCursor = idx >= 0 ? idx : 0
 }
 
 function updatePendingUI(): void {
@@ -198,6 +219,11 @@ function updatePendingUI(): void {
 
 // ─── G2 lens ───────────────────────────────────────────────────────────
 function buildG2Content(): string {
+  // ルート画面: tmux一覧 (cursor 中央)
+  if (phase === 'rootlist') {
+    return buildRootListView()
+  }
+
   // idle時は tmux の末尾を画面いっぱい使って表示。ヘッダで縦を消費しない。
   if (phase === 'idle') {
     if (tmuxOutput && tmuxOutput.trim()) {
@@ -246,6 +272,25 @@ function tailLines(text: string, n: number): string {
   return normalizeOutput(text).slice(-n).join('\n')
 }
 
+/** G2 rootlist 画面: tmux 一覧 (visionote/g2/renderer.ts:444 displayList を踏襲) */
+function buildRootListView(): string {
+  const items = lastSessions
+  if (items.length === 0) {
+    return '(no sessions)\n\nCreate one in app'
+  }
+  // カーソルがウィンドウの中央付近に来るよう start を計算
+  const total = items.length
+  let start = rootCursor - Math.floor(ROOT_LIST_VISIBLE / 2)
+  start = Math.max(0, start)
+  start = Math.min(start, Math.max(0, total - ROOT_LIST_VISIBLE))
+
+  const lines: string[] = []
+  for (let i = start; i < Math.min(start + ROOT_LIST_VISIBLE, total); i++) {
+    lines.push((i === rootCursor ? '▶ ' : '　') + items[i].name)
+  }
+  return lines.join('\n')
+}
+
 /** Lens 用: scrollOffset を考慮した表示ウィンドウ */
 function lensWindow(text: string, n: number): string {
   const lines = normalizeOutput(text)
@@ -286,6 +331,9 @@ function resetScroll(): void {
 
 function buildG2Footer(): string {
   switch (phase) {
+    case 'rootlist':
+      if (lastSessions.length === 0) return 'No session'
+      return `Click: Open  ↑↓ Nav  (${rootCursor + 1}/${lastSessions.length})`
     case 'recording': return 'Click: Stop'
     case 'finalizing': return 'Finalizing…'
     case 'pending': return '↑ Send  ↓ Discard'
@@ -293,7 +341,7 @@ function buildG2Footer(): string {
     case 'unconfigured': return 'Configure in app'
     case 'idle':
       if (isScrolled()) return `↑ older  ↓ newer  (back ${scrollOffset})`
-      return 'Click: Record  ↑ scroll'
+      return 'Click: Rec  ↑↓ Scroll  ⊕⊕ Back'
     default: return ''
   }
 }
@@ -381,8 +429,13 @@ async function reloadSessions(verbose = false): Promise<void> {
       settings.sessionName = lastSessions[0].name
       void persistSettings()
     }
+    // rootlist のカーソル位置がオーバーランしないようクランプ
+    if (rootCursor >= lastSessions.length) {
+      rootCursor = Math.max(0, lastSessions.length - 1)
+    }
     renderSessionPills()
     paintStatus()
+    if (phase === 'rootlist') void refreshG2(true)
   } catch (e) {
     log(`listSessions error: ${(e as Error).message}`)
   }
@@ -784,6 +837,12 @@ function updateRecordButton(): void {
     recordBtn.classList.remove('recording')
     return
   }
+  if (phase === 'rootlist') {
+    recordBtn.disabled = true
+    recordBtn.textContent = 'Pick session on G2'
+    recordBtn.classList.remove('recording')
+    return
+  }
   recordBtn.disabled = phase !== 'idle'
   recordBtn.textContent = 'Record'
   recordBtn.classList.remove('recording')
@@ -997,11 +1056,48 @@ async function toggleRecording(): Promise<void> {
   } else if (phase === 'pending') {
     // 録音中じゃないクリックは何もしない (誤操作防止)
     return
+  } else if (phase === 'rootlist') {
+    openSelectedFromRoot()
   } else if (phase === 'idle') {
     await startRecording()
   } else {
     settingsDetails.open = true
   }
+}
+
+// ─── rootlist ──────────────────────────────────────────────────────────
+function moveRootCursor(delta: number): void {
+  if (phase !== 'rootlist') return
+  if (lastSessions.length === 0) return
+  rootCursor = (rootCursor + delta + lastSessions.length) % lastSessions.length
+  void refreshG2(true)
+}
+
+function openSelectedFromRoot(): void {
+  if (phase !== 'rootlist') return
+  const sel = lastSessions[rootCursor]
+  if (!sel) return
+  settings.sessionName = sel.name
+  void persistSettings()
+  log(`Opened session: ${sel.name}`)
+  // session 画面へ
+  tmuxOutput = ''
+  resetScroll()
+  phase = 'idle'
+  paintStatus()
+  void refreshG2(true)
+  updateRecordButton()
+  void refreshOutput()
+}
+
+function backToRoot(): void {
+  if (phase !== 'idle') return
+  log('back to root list')
+  syncRootCursor()
+  phase = 'rootlist'
+  paintStatus()
+  void refreshG2(true)
+  updateRecordButton()
 }
 
 confirmBtn.addEventListener('click', () => { void confirmAndSend() })
@@ -1073,18 +1169,24 @@ async function boot(): Promise<void> {
   if (bridge) {
     initRenderer(bridge)
     setEventHandlers({
-      // pending: 上=送信 / 下=破棄
-      // idle:    上=過去ログへ / 下=新しい方へ (lens内独自スクロール)
+      // rootlist: 上下=カーソル / click=open
+      // pending:  上=送信 / 下=破棄
+      // idle:     上=過去ログへ / 下=新しい方へ (lens内独自スクロール)
       onScrollUp: () => {
-        if (phase === 'pending') void confirmAndSend()
+        if (phase === 'rootlist') moveRootCursor(-1)
+        else if (phase === 'pending') void confirmAndSend()
         else if (phase === 'idle') scrollBack()
       },
       onScrollDown: () => {
-        if (phase === 'pending') discardPending()
+        if (phase === 'rootlist') moveRootCursor(1)
+        else if (phase === 'pending') discardPending()
         else if (phase === 'idle') scrollForward()
       },
       onClick: () => { void toggleRecording() },
-      onDoubleClick: () => { /* TODO: セッション切替 */ },
+      // 二重クリック: session 画面 → root に戻る
+      onDoubleClick: () => {
+        if (phase === 'idle') backToRoot()
+      },
       onAudio: (pcm) => {
         if (phase !== 'recording') return
         trackPcmFrame(pcm)
