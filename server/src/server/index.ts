@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { captureOutput, createSession, killSession, listSessions, sendKeys } from './tmux.ts';
 import { handlePtyConnection } from './pty.ts';
 import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './asr/index.ts';
+import { claudeRouter } from './claude/router.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = resolve(__dirname, '../../dist/web');
@@ -76,6 +77,8 @@ app.post('/api/sessions/:name/input', async (c) => {
     return c.json({ error: msg }, status);
   }
 });
+
+app.route('/api', claudeRouter);
 
 app.get('/api/asr/status', (c) => c.json({ backend: getBackendName(), ...isAsrReady() }));
 

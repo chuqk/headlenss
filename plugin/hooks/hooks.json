@@ -1,0 +1,101 @@
+{
+  "description": "Forward Claude Code lifecycle events to the headlenss server so G2 can show what Claude is doing.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/session-start",
+            "timeout": 10,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/session-end",
+            "timeout": 10,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/user-prompt-submit",
+            "timeout": 10,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/stop",
+            "timeout": 30,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/pre-tool-use",
+            "timeout": 600,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/permission-request",
+            "timeout": 600,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ]
+  }
+}
