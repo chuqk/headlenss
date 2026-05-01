@@ -1,9 +1,25 @@
 import * as pty from '@homebridge/node-pty-prebuilt-multiarch';
 import type { WebSocket } from 'ws';
-import { execFile, execFileSync } from 'node:child_process';
-import { Terminal as HeadlessTerminal } from '@xterm/headless';
-import { SerializeAddon } from '@xterm/addon-serialize';
+import { execFileSync } from 'node:child_process';
+import headlessPkg from '@xterm/headless';
+import serializePkg from '@xterm/addon-serialize';
 import { ensureSession, validateName } from './tmux.ts';
+
+// @xterm/headless / addon-serialize は CJS モジュールで Terminal/SerializeAddon を default export に内包する
+const { Terminal: HeadlessTerminal } = headlessPkg as unknown as {
+  Terminal: new (opts: { cols: number; rows: number; scrollback: number; allowProposedApi?: boolean }) => HeadlessTerminalInstance;
+};
+const { SerializeAddon } = serializePkg as unknown as { SerializeAddon: new () => SerializeAddonInstance };
+
+type HeadlessTerminalInstance = {
+  write: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  loadAddon: (addon: unknown) => void;
+  dispose: () => void;
+};
+type SerializeAddonInstance = {
+  serialize: () => string;
+};
 
 // 設計:
 //   tmux Control Mode (-CC) を介して各セッションに 1 本だけ attach し、
@@ -29,8 +45,8 @@ type ServerMsg = ServerMsgOutput | ServerMsgScreen | ServerMsgAttached | ServerM
 interface HeadlessEntry {
   sessionName: string;
   ccProcess: pty.IPty;
-  terminal: HeadlessTerminal;
-  serializeAddon: SerializeAddon;
+  terminal: HeadlessTerminalInstance;
+  serializeAddon: SerializeAddonInstance;
   tmuxPaneId: string | null;
   lineBuffer: Buffer;
   pendingBytes: Buffer;
@@ -170,8 +186,7 @@ async function createHeadlessEntry(
 
   const terminal = new HeadlessTerminal({ cols, rows, scrollback: 5000, allowProposedApi: true });
   const serializeAddon = new SerializeAddon();
-  // SerializeAddon の型は xterm.js (DOM 版) Terminal を要求するが、headless 版でも同じ public API があるため意図的にキャスト
-  terminal.loadAddon(serializeAddon as unknown as Parameters<typeof terminal.loadAddon>[0]);
+  terminal.loadAddon(serializeAddon);
 
   const ccProc = pty.spawn('tmux', ['-CC', 'attach-session', '-t', sessionName], {
     name: 'xterm-256color',
