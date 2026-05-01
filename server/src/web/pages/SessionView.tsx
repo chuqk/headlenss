@@ -56,13 +56,14 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       return true;
     });
 
-    // Shift+Enter: bracketed paste で改行を「貼り付け」として送る。
-    // CSI u (\x1b[13;2u) は受信側が kitty/extended-keys を要求していないと submit に化けるが、
-    // bracketed paste 内の \n は Claude Code 等の入力欄でリテラル改行として処理される。
+    // Shift+Enter: CSI u (kitty keyboard protocol) で送る。
+    //   Anthropic 公式 (code.claude.com/docs/en/terminal-config) が指定する規約。
+    //   tmux 側で `extended-keys on` + `terminal-features 'xterm*:extkeys'` が
+    //   設定されていれば、Claude Code が CSI u を改行として正しく解釈する。
     term.attachCustomKeyEventHandler((event) => {
       if (event.key === 'Enter' && event.shiftKey && event.type === 'keydown') {
         if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'input', data: '\x1b[200~\n\x1b[201~' }));
+          ws.send(JSON.stringify({ type: 'input', data: '\x1b[13;2u' }));
         }
         return false;
       }

@@ -47,14 +47,23 @@ export async function listSessions(): Promise<Session[]> {
 
 /**
  * tmux サーバ・セッションを headless ブラウザビューに最適化する設定を流す。
- *  - mouse off : ホイール等のマウスイベントを tmux に渡さない (ブラウザ側 xterm.js の scrollback を効かせるため)
- *  - status off: ステータスバーは Web UI で別表示するので非表示
- *  - extended-keys on: Shift+Enter 等の拡張キーを正しく届ける (server scope)
+ * Claude Code 公式ドキュメント (code.claude.com/docs/en/terminal-config) で必須とされる
+ * 3 設定をベースに、headlenss 固有の mouse/status を加えたもの。
+ *
+ *  - allow-passthrough on : 通知/プログレスバーを外側端末まで通す (Claude Code向け)
+ *  - extended-keys on     : Shift+Enter 等の拡張キーを認識させる
+ *  - terminal-features 'xterm*:extkeys'
+ *                         : 外側端末が CSI u を受理できる旨を tmux に通知
+ *                          (これが無いと extended-keys が pane へ伝わらない)
+ *  - mouse off            : ホイールを tmux に取られず、ブラウザ側 xterm.js scrollback を効かせる
+ *  - status off           : ステータスバーは Web UI で別表示するため非表示
  */
 export async function configureSessionForHeadless(name: string): Promise<void> {
   validateName(name);
-  // server option (全セッション共通)
+  // global / server option (全セッション共通)
+  try { await exec('tmux', ['set', '-g', 'allow-passthrough', 'on']); } catch { /* ignore */ }
   try { await exec('tmux', ['set', '-s', 'extended-keys', 'on']); } catch { /* ignore */ }
+  try { await exec('tmux', ['set', '-as', 'terminal-features', 'xterm*:extkeys']); } catch { /* ignore */ }
   // session option
   try { await exec('tmux', ['set', '-t', name, 'mouse', 'off']); } catch { /* ignore */ }
   try { await exec('tmux', ['set', '-t', name, 'status', 'off']); } catch { /* ignore */ }
