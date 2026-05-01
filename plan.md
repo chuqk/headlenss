@@ -15,15 +15,19 @@ G2(マイク + ディスプレイ + タッチパッド)
    ↕ BLE 5.2
 スマホ(Even Realities アプリ = Flutter WebView)
    └─ G2用Webアプリ(even/ の中身、TS+Vite)
-   ↕ HTTP/WS (tailscale経由、HTTPS)
-母艦PC(server/ の中身、Hono + tmux + whisper.cpp + Claude Code)
+        ├─ HTTPS → Speechmatics REST (音声 → テキスト)
+        └─ HTTP/WS → 母艦PC (tailscale経由)
+母艦PC(server/ の中身、Hono + tmux + Claude Code)
    ↕ HTTP/WS
 ブラウザ(スマホ/PC、Web画面)
 ```
 
 - G2本体ではJSは動かない。表示・入力・音声キャプチャの末端デバイス。
 - G2アプリは「ペアリングしたスマホ上のWebView」で動作する(Even Hub SDKの制約)。
-- 母艦PCはサーバー、tmuxホスト、Claude Code実行環境、whisper.cppサーバーを兼ねる。
+- ASRはG2アプリから直接Speechmaticsに投げる構成 (API keyはWebView上で入力・保存)。
+  - 母艦サーバには音声を送らない。テキストだけが `POST /api/sessions/:name/input` に流れる。
+  - 母艦サーバの `/api/asr` (whisper-cpp / amivoice / speechmatics) は Web UI から手動文字起こしする用途として残す。
+- 母艦PCはサーバー、tmuxホスト、Claude Code実行環境を兼ねる。
 - スマホは常時稼働の中継ハブとして動作する前提。
 
 # Webページ
@@ -98,9 +102,16 @@ G2(マイク + ディスプレイ + タッチパッド)
 # 通信プロトコル(暫定方針)
 
 - 母艦PC ↔ Web画面 : HTTP API + WebSocket(xterm.js のターミナル中継)
-- 母艦PC ↔ G2アプリ(スマホ) : HTTP API + WebSocket
-  - 音声 : G2マイクからのPCMチャンクをWSでストリーミング送信、サーバーで whisper.cpp に流して文字起こし
-  - テキスト出力 : サーバーから WS でテキストを push、G2アプリは `textContainerUpgrade` でレンズに反映
+- G2アプリ ↔ Speechmatics : **Realtime WebSocket API (直接接続)**
+  - 一時 JWT 発行: `POST https://mp.speechmatics.com/v1/api_keys?type=rt` (CORS 全公開なのでブラウザ直叩き可)
+  - 接続: `wss://eu.rt.speechmatics.com/v2?jwt=<...>`
+  - StartRecognition (audio_format=pcm_s16le 16kHz mono) → AddAudio バイナリチャンク連投 → EndOfStream
+  - AddPartialTranscript / AddTranscript を受信、レイテンシは partial <500ms / final 1〜2s (`max_delay:1.0`)
+  - API keyはWebViewのフォームで入力し localStorage + bridge.setLocalStorage に保存
+- G2アプリ ↔ 母艦PC : HTTP API
+  - テキスト送信: `POST /api/sessions/:name/input` (`{text, submit}`) で tmux に流し込む
+  - セッション一覧: `GET /api/sessions`
+  - 将来案: 母艦PCからレンズへのpush (WS or SSE) で `textContainerUpgrade` を駆動
   - WSが whitelist や CORS で問題が出る場合は SSE / fetch ストリーミングに切り替え検討
 
 # 検証が必要な未確定事項
@@ -112,11 +123,12 @@ G2(マイク + ディスプレイ + タッチパッド)
 
 # 開発の進め方
 
-1. server/ から先に着手。tmuxセッション管理API + Web画面 + xterm.js中継。
-2. whisper.cppセットアップと `POST /api/asr`(or WS版)エンドポイント。
-3. even/ を asrテンプレートから起動。シミュレーターで音声→母艦PC→文字起こし→G2表示の往復を確立。
+1. server/ から先に着手。tmuxセッション管理API + Web画面 + xterm.js中継。 ✅
+2. whisper.cppセットアップと `POST /api/asr`(or WS版)エンドポイント。 ✅ (Web UI経由用に残す)
+3. even/ を実装。録音→Speechmatics RT→ tmux send-keys のフローを確立 (リアルタイムで partial を G2 レンズに表示しながら、確定で tmux 送信)。 ✅
 4. 実機G2でマイク精度・表示・タッチ操作を検証。
-5. マスターエージェント機能を組み込み(後追い)。
+5. レンズへの双方向 push (tmux 出力 → G2画面) を組み込み。
+6. マスターエージェント機能を組み込み(後追い)。
 
 # 参考リソース
 

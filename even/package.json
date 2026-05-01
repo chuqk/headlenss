@@ -1,0 +1,22 @@
+{
+  "name": "headlenss-even",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5177",
+    "build": "vite build",
+    "preview": "vite preview",
+    "qr": "evenhub qr --http --port 5177",
+    "pack": "npm run build && evenhub pack app.json dist -o headlenss.ehpk",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.10"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.1.11",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
+  }
+}

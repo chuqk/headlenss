@@ -1,0 +1,5 @@
+node_modules
+dist
+*.ehpk
+qr_dev.png
+.DS_Store

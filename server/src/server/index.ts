@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSession, killSession, listSessions, sendKeys } from './tmux.ts';
+import { captureOutput, createSession, killSession, listSessions, sendKeys } from './tmux.ts';
 import { handlePtyConnection } from './pty.ts';
 import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './asr/index.ts';
 
@@ -43,6 +43,20 @@ app.delete('/api/sessions/:name', async (c) => {
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+app.get('/api/sessions/:name/output', async (c) => {
+  const name = c.req.param('name');
+  const lines = Number(c.req.query('lines') ?? 24);
+  try {
+    const text = await captureOutput(name, Number.isFinite(lines) ? lines : 24);
+    return c.json({ text });
+  } catch (e) {
+    const msg = (e as Error).message;
+    const status =
+      msg.includes("can't find session") || msg.includes('no server running') ? 404 : 400;
+    return c.json({ error: msg }, status);
   }
 });
 

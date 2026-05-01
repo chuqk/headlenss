@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>headlenss</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body data-view="boot">
+  <main id="app">
+
+    <!-- ─── Onboarding wizard ───────────────────────────────────── -->
+    <div id="onboarding" class="view">
+      <header class="ob-header">
+        <h1>headlenss</h1>
+        <p class="muted">音声で Claude Code を動かす</p>
+      </header>
+
+      <!-- Step 1: server -->
+      <div class="ob-step" data-step="1">
+        <div class="step-counter">Step 1 / 2</div>
+        <h2 class="step-title">PC に接続</h2>
+        <p class="step-desc">
+          PC で起動した <code>headlenss server</code> の URL を貼り付けてください。
+          サーバ起動時にターミナルへ表示される URL (例: <code>http://&lt;tailscale-ip&gt;:3000</code>) です。
+        </p>
+        <input id="ob-server-url" type="url" inputmode="url"
+               placeholder="http://100.x.x.x:3000"
+               autocapitalize="off" autocorrect="off" spellcheck="false" />
+        <div id="ob-server-probe" class="probe small muted">URL を入れると自動で確認します</div>
+        <div class="ob-actions">
+          <button id="ob-next-1" type="button" class="primary" disabled>次へ →</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Speechmatics key -->
+      <div class="ob-step" data-step="2" hidden>
+        <div class="step-counter">Step 2 / 2</div>
+        <h2 class="step-title">音声認識キー</h2>
+        <p class="step-desc">
+          音声を文字に変換するために <strong>Speechmatics</strong> の API key を使います。
+          まだ持っていなければ
+          <a href="https://portal.speechmatics.com/" target="_blank" rel="noopener noreferrer">portal.speechmatics.com</a>
+          で無料登録 (月480分まで無料)。
+        </p>
+        <input id="ob-sm-key" type="password" placeholder="API key を貼り付け"
+               autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        <div class="ob-actions row">
+          <button id="ob-back" type="button" class="link-btn">← 戻る</button>
+          <button id="ob-finish" type="button" class="primary" disabled>はじめる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Dashboard ───────────────────────────────────────────── -->
+    <div id="dashboard" class="view">
+
+      <!-- 状態 + 対象セッション。常時表示、デカ字 -->
+      <section class="status-bar" id="statusBar">
+        <div class="status-line">
+          <span id="statusDot" class="dot dot-idle"></span>
+          <span id="statusText">Ready</span>
+        </div>
+        <div class="status-line">
+          <span class="muted small">→ session</span>
+          <strong id="activeSessionName">—</strong>
+        </div>
+      </section>
+
+      <!-- セッション切替 -->
+      <section class="sessions">
+        <header class="section-head">
+          <h2>Sessions</h2>
+          <button id="reloadSessionsBtn" class="link-btn" type="button">refresh</button>
+        </header>
+        <div id="sessionPills" class="pills"></div>
+        <form id="newSessionForm" class="new-session">
+          <input id="newSessionInput" type="text" placeholder="new session name"
+                 pattern="[a-zA-Z0-9_\-]+" maxlength="40"
+                 autocapitalize="off" autocorrect="off" spellcheck="false" />
+          <button type="submit">+ create</button>
+        </form>
+      </section>
+
+      <!-- 確定待ち (pending) — クリックで停止後、送信/破棄を選ぶ画面。
+           G2上は ↑送信 ↓破棄、スマホ画面は2ボタンで操作 -->
+      <section id="pendingSection" class="pending" hidden>
+        <header class="section-head">
+          <h2>確定待ち</h2>
+        </header>
+        <div id="pendingText" class="pending-text"></div>
+        <div class="pending-actions">
+          <button id="discardBtn" type="button" class="danger">↓ 破棄</button>
+          <button id="confirmBtn" type="button" class="primary">↑ 送信</button>
+        </div>
+      </section>
+
+      <!-- tmux 画面ミラー -->
+      <section class="tmux-mirror">
+        <header class="section-head">
+          <h2>Output</h2>
+          <button id="reloadOutputBtn" class="link-btn" type="button">refresh</button>
+        </header>
+        <pre id="tmuxOutput" class="tmux-output muted small">(no output yet)</pre>
+      </section>
+
+      <!-- 履歴 -->
+      <section class="history">
+        <header class="section-head">
+          <h2>Recent</h2>
+          <button id="clearHistoryBtn" class="link-btn" type="button">clear</button>
+        </header>
+        <ol id="historyList" class="history-list">
+          <li class="muted small">(まだ送信していません)</li>
+        </ol>
+      </section>
+
+      <!-- 設定: 普段は見ない。最低限だけ見せる -->
+      <details id="settingsDetails" class="card">
+        <summary>⚙ Settings</summary>
+        <div class="settings-body">
+          <label class="row">
+            <span>Server URL</span>
+            <input id="serverUrl" type="url" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <span id="serverProbeText" class="probe muted small">未確認</span>
+          </label>
+          <label class="row">
+            <span>Speechmatics API key</span>
+            <input id="smApiKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          </label>
+
+          <details class="advanced">
+            <summary>Advanced</summary>
+            <div class="advanced-body">
+              <label class="row inline">
+                <input id="submitOnSend" type="checkbox" />
+                <span>送信後に Enter を打つ (即実行)</span>
+              </label>
+              <div class="row-2col">
+                <label class="row">
+                  <span>言語</span>
+                  <input id="smLang" type="text" placeholder="ja" />
+                </label>
+                <label class="row">
+                  <span>operating_point</span>
+                  <select id="smOperatingPoint">
+                    <option value="enhanced">enhanced</option>
+                    <option value="standard">standard</option>
+                  </select>
+                </label>
+              </div>
+              <button id="resetOnboardingBtn" type="button" class="link-btn">セットアップをやり直す</button>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <!-- 手動録音 (G2無し時のみ目立たせる) -->
+      <section id="manualRecord" class="manual-record">
+        <button id="recordBtn" type="button" disabled>Loading…</button>
+        <span id="duration" class="muted small">0.0s</span>
+      </section>
+
+      <details class="card">
+        <summary>Log</summary>
+        <div class="log-toolbar">
+          <button id="copyLogBtn" type="button">Copy</button>
+          <button id="clearLogBtn" type="button">Clear</button>
+        </div>
+        <pre id="log"></pre>
+      </details>
+
+    </div>
+
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

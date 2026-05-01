@@ -65,3 +65,21 @@ export async function sendKeys(name: string, text: string, submit = false): Prom
     await exec('tmux', ['send-keys', '-t', name, 'Enter']);
   }
 }
+
+/**
+ * セッションのアクティブpaneを capture-pane でテキスト化して返す。
+ * `-p` stdout出力 / `-J` 折り返し行を結合 / `-S -<lines>` で開始行を相対指定。
+ * 色エスケープは付かない (`-e` を渡さない)。
+ */
+export async function captureOutput(name: string, lines = 24): Promise<string> {
+  validateName(name);
+  const safeLines = Math.max(1, Math.min(2000, Math.floor(lines)));
+  const { stdout } = await exec('tmux', [
+    'capture-pane',
+    '-t', name,
+    '-p',
+    '-J',
+    '-S', `-${safeLines}`,
+  ]);
+  return stdout;
+}
