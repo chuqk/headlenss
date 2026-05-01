@@ -56,15 +56,17 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       return true;
     });
 
-    // Shift+Enter: CSI u (kitty keyboard protocol) で送る。
-    //   Anthropic 公式 (code.claude.com/docs/en/terminal-config) が指定する規約。
-    //   tmux 側で `extended-keys on` + `terminal-features 'xterm*:extkeys'` が
-    //   設定されていれば、Claude Code が CSI u を改行として正しく解釈する。
+    // Shift+Enter: bracketed paste で改行をペースト扱いに包んで送る (split-end と同じ)。
+    //   Claude Code を含む多くの TUI 入力欄が DECSET 2004 を有効にしており、
+    //   \x1b[200~ ... \x1b[201~ で囲まれた中身は「ペースト」として扱われ submit されない。
+    //   xterm.js は customKeyEventHandler で return false しても直後に Enter のデフォルト
+    //   バイト (\r) を別パスから onData に流すケースがあるため、ガード変数で1回だけ握り潰す。
     term.attachCustomKeyEventHandler((event) => {
       if (event.key === 'Enter' && event.shiftKey && event.type === 'keydown') {
         if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'input', data: '\x1b[13;2u' }));
+          ws.send(JSON.stringify({ type: 'input', data: '\x1b[200~\n\x1b[201~' }));
         }
+        armSuppress();
         return false;
       }
       return true;
@@ -81,7 +83,27 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       }
     };
 
-    const onDataDisp = term.onData(sendInput);
+    // customKeyEventHandler が Shift+Enter で `return false` しても、xterm.js の
+    // 後続パスで Enter のデフォルト byte (\r) が onData に流れてしまうため、
+    // 次の1回だけ \r/\n を握り潰すフラグを介在させる。
+    let suppressNextEnter = false;
+    let suppressTimer: ReturnType<typeof setTimeout> | null = null;
+    const armSuppress = () => {
+      suppressNextEnter = true;
+      if (suppressTimer) clearTimeout(suppressTimer);
+      // 50ms 以内に onData が来なければ抑止解除 (誤抑止防止)
+      suppressTimer = setTimeout(() => { suppressNextEnter = false; }, 50);
+    };
+
+    const onDataDisp = term.onData((data) => {
+      if (suppressNextEnter && (data === '\r' || data === '\n' || data === '\r\n')) {
+        suppressNextEnter = false;
+        if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
+        return;
+      }
+      suppressNextEnter = false;
+      sendInput(data);
+    });
     const onResizeDisp = term.onResize(({ cols, rows }) => sendResize(cols, rows));
 
     const fitAndPushSize = () => {
