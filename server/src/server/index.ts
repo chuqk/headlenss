@@ -6,8 +6,9 @@ import { WebSocketServer } from 'ws';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSession, killSession, listSessions } from './tmux.ts';
+import { createSession, killSession, listSessions, sendKeys } from './tmux.ts';
 import { handlePtyConnection } from './pty.ts';
+import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './asr/index.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = resolve(__dirname, '../../dist/web');
@@ -42,6 +43,49 @@ app.delete('/api/sessions/:name', async (c) => {
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+app.post('/api/sessions/:name/input', async (c) => {
+  const name = c.req.param('name');
+  const body = (await c.req.json().catch(() => ({}))) as { text?: unknown; submit?: unknown };
+  if (typeof body.text !== 'string') {
+    return c.json({ error: 'body must be { "text": string, "submit"?: boolean }' }, 400);
+  }
+  try {
+    await sendKeys(name, body.text, body.submit === true);
+    return c.json({ ok: true });
+  } catch (e) {
+    const msg = (e as Error).message;
+    const status =
+      msg.includes("can't find session") || msg.includes('no server running') ? 404 : 400;
+    return c.json({ error: msg }, status);
+  }
+});
+
+app.get('/api/asr/status', (c) => c.json({ backend: getBackendName(), ...isAsrReady() }));
+
+app.post('/api/asr', async (c) => {
+  const ready = isAsrReady();
+  if (!ready.ok) return c.json({ error: ready.reason }, 503);
+
+  const ct = (c.req.header('content-type') ?? 'application/octet-stream').toLowerCase();
+  const lang = c.req.query('lang') || undefined;
+  const buf = Buffer.from(await c.req.arrayBuffer());
+  if (buf.length === 0) return c.json({ error: 'empty body' }, 400);
+
+  try {
+    let result;
+    if (ct.startsWith('audio/wav') || ct.startsWith('audio/x-wav') || ct.startsWith('audio/wave')) {
+      result = await transcribeWav(buf, lang);
+    } else if (ct.startsWith('audio/l16') || ct.startsWith('audio/pcm') || ct === 'application/octet-stream') {
+      result = await transcribePcm16(buf, lang);
+    } else {
+      return c.json({ error: `unsupported content-type: ${ct}. use audio/wav or audio/l16` }, 415);
+    }
+    return c.json(result);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500);
   }
 });
 

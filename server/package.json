@@ -5,6 +5,7 @@
   "description": "headlenss server: tmux session management API + xterm.js web UI",
   "type": "module",
   "scripts": {
+    "setup": "node scripts/setup-whisper.mjs",
     "dev": "concurrently -k -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:web": "vite",

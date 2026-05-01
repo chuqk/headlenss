@@ -55,3 +55,13 @@ export async function killSession(name: string): Promise<void> {
   validateName(name);
   await exec('tmux', ['kill-session', '-t', name]);
 }
+
+export async function sendKeys(name: string, text: string, submit = false): Promise<void> {
+  validateName(name);
+  if (text.length > 0) {
+    await exec('tmux', ['send-keys', '-t', name, '-l', text]);
+  }
+  if (submit) {
+    await exec('tmux', ['send-keys', '-t', name, 'Enter']);
+  }
+}
