@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "headlenss",
+  "version": "0.1.0",
+  "description": "Plugins for headlenss — surface Claude Code activity to Even G2 smart glasses.",
+  "owner": {
+    "name": "takashicompany"
+  },
+  "plugins": [
+    {
+      "name": "headlenss",
+      "description": "Forward Claude Code lifecycle events (SessionStart / UserPromptSubmit / PreToolUse / PermissionRequest / Stop / SessionEnd) to the headlenss server so the G2 lens can show what Claude is doing.",
+      "version": "0.1.0",
+      "author": {
+        "name": "takashicompany"
+      },
+      "source": "./plugin",
+      "category": "tooling"
+    }
+  ]
+}
