@@ -56,11 +56,13 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       return true;
     });
 
-    // Shift+Enter は CSI u (\x1b[13;2u) で送る (extended-keys 対応シェル/Claude Code向け)
+    // Shift+Enter: bracketed paste で改行を「貼り付け」として送る。
+    // CSI u (\x1b[13;2u) は受信側が kitty/extended-keys を要求していないと submit に化けるが、
+    // bracketed paste 内の \n は Claude Code 等の入力欄でリテラル改行として処理される。
     term.attachCustomKeyEventHandler((event) => {
       if (event.key === 'Enter' && event.shiftKey && event.type === 'keydown') {
         if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'input', data: '\x1b[13;2u' }));
+          ws.send(JSON.stringify({ type: 'input', data: '\x1b[200~\n\x1b[201~' }));
         }
         return false;
       }
