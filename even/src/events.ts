@@ -8,6 +8,8 @@ type Handlers = {
   onClick: () => void
   onDoubleClick: () => void
   onAudio: (pcm: Uint8Array) => void
+  onForegroundEnter?: () => void
+  onForegroundExit?: () => void
   onLog?: (msg: string) => void
 }
 
@@ -32,6 +34,10 @@ function scrollThrottled(): boolean {
   return false
 }
 
+/**
+ * EvenHubEvent の eventType を OsEventTypeList に正規化。
+ * SDK が用意している `OsEventTypeList.fromJson` を最優先で使う (0..8 を網羅)。
+ */
 function resolveEventType(event: EvenHubEvent): OsEventTypeList | undefined {
   const raw =
     event.listEvent?.eventType ??
@@ -42,24 +48,13 @@ function resolveEventType(event: EvenHubEvent): OsEventTypeList | undefined {
     ((event.jsonData ?? {}) as Record<string, unknown>).Event_Type ??
     ((event.jsonData ?? {}) as Record<string, unknown>).type
 
+  const fromSdk = OsEventTypeList.fromJson?.(raw)
+  if (fromSdk !== undefined) return fromSdk
+
+  // フォールバック (SDK 古い場合)
   if (typeof raw === 'number') {
-    switch (raw) {
-      case 0: return OsEventTypeList.CLICK_EVENT
-      case 1: return OsEventTypeList.SCROLL_TOP_EVENT
-      case 2: return OsEventTypeList.SCROLL_BOTTOM_EVENT
-      case 3: return OsEventTypeList.DOUBLE_CLICK_EVENT
-      default: return undefined
-    }
+    if (raw >= 0 && raw <= 8) return raw as OsEventTypeList
   }
-
-  if (typeof raw === 'string') {
-    const v = raw.toUpperCase()
-    if (v.includes('DOUBLE')) return OsEventTypeList.DOUBLE_CLICK_EVENT
-    if (v.includes('CLICK')) return OsEventTypeList.CLICK_EVENT
-    if (v.includes('SCROLL_TOP') || v.includes('UP')) return OsEventTypeList.SCROLL_TOP_EVENT
-    if (v.includes('SCROLL_BOTTOM') || v.includes('DOWN')) return OsEventTypeList.SCROLL_BOTTOM_EVENT
-  }
-
   if (event.listEvent || event.textEvent || event.sysEvent) return OsEventTypeList.CLICK_EVENT
   return undefined
 }
@@ -83,6 +78,17 @@ export function onEvenHubEvent(event: EvenHubEvent): void {
       break
     case OsEventTypeList.DOUBLE_CLICK_EVENT:
       handlers.onDoubleClick()
+      break
+    case OsEventTypeList.FOREGROUND_ENTER_EVENT:
+      handlers.onForegroundEnter?.()
+      break
+    case OsEventTypeList.FOREGROUND_EXIT_EVENT:
+      handlers.onForegroundExit?.()
+      break
+    case OsEventTypeList.ABNORMAL_EXIT_EVENT:
+    case OsEventTypeList.SYSTEM_EXIT_EVENT:
+    case OsEventTypeList.IMU_DATA_REPORT:
+      // 黙殺
       break
     default:
       handlers.onLog?.(`UNHANDLED: ${String(eventType)} | ${JSON.stringify(event)}`)

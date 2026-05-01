@@ -8,7 +8,7 @@ import {
   trackPcmFrame,
 } from './audio'
 import { onEvenHubEvent, setEventHandlers } from './events'
-import { initRenderer, showScreen, updateContent, updateFooter } from './renderer'
+import { initRenderer, resetPageState, showScreen, updateContent, updateFooter } from './renderer'
 import { HeadlenssClient, type Session } from './server-client'
 import {
   DEFAULT_SETTINGS,
@@ -87,7 +87,7 @@ const logEl = document.getElementById('log') as HTMLPreElement
 type Phase = 'boot' | 'unconfigured' | 'idle' | 'recording' | 'finalizing' | 'pending' | 'sending' | 'error'
 
 const TMUX_OUTPUT_LINES = 30           // capture-pane で取得する行数
-const TMUX_OUTPUT_DISPLAY_LINES = 10   // G2レンズに出す末尾行数
+const TMUX_OUTPUT_DISPLAY_LINES = 8    // G2レンズに出す末尾行数 (288pxに収まる量)
 const TMUX_POLL_INTERVAL_MS = 2000     // 出力ポーリング間隔
 
 type HistoryEntry = {
@@ -116,6 +116,7 @@ let liveTranscript = '' // 録音中のpartial+final結合表示用
 let pendingText = ''    // 確定待ちのテキスト (送信 or 破棄選択前)
 let tmuxOutput = ''     // 直近取得したtmux画面出力 (idle時にレンズへ表示)
 let outputPollTimer: ReturnType<typeof setInterval> | null = null
+let outputFetchOkLogged = false
 let g2RefreshLastAt = 0
 const client = new HeadlenssClient('')
 
@@ -196,33 +197,38 @@ function updatePendingUI(): void {
 
 // ─── G2 lens ───────────────────────────────────────────────────────────
 function buildG2Content(): string {
-  const lines: string[] = []
-  const s = statusForCurrentPhase()
-  lines.push(`headlenss · ${s.text}`)
-  lines.push(`session: ${settings.sessionName || '(none)'}`)
-  lines.push('')
+  // idle時は tmux の末尾を画面いっぱい使って表示。ヘッダで縦を消費しない。
+  if (phase === 'idle') {
+    if (tmuxOutput && tmuxOutput.trim()) {
+      return tailLines(tmuxOutput, TMUX_OUTPUT_DISPLAY_LINES)
+    }
+    // tmux未取得 / 空のときは案内
+    return `[${settings.sessionName || 'no session'}]\n(no output yet)`
+  }
 
+  // それ以外の状態は状態 + 内容を表示
+  const lines: string[] = []
   if (phase === 'recording') {
+    lines.push(`Recording ${getRecordingSeconds().toFixed(1)}s`)
+    lines.push('')
     lines.push('▌ ' + (liveTranscript || '...'))
   } else if (phase === 'finalizing') {
+    lines.push('Finalizing…')
     lines.push('▌ ' + (liveTranscript || '(processing)'))
   } else if (phase === 'pending') {
-    lines.push('? ' + (pendingText || '(empty)'))
+    lines.push('Confirm: ↑Send  ↓Discard')
+    lines.push('')
+    lines.push(pendingText || '(empty)')
   } else if (phase === 'sending') {
-    lines.push('→ ' + pendingText.slice(0, 200))
-  } else if (phase === 'idle' && tmuxOutput) {
-    // idleの間は tmux 画面の末尾を表示。これで送信した結果が見える
-    lines.push(tailLines(tmuxOutput, TMUX_OUTPUT_DISPLAY_LINES))
+    lines.push(`Sending → ${settings.sessionName}`)
+    lines.push('')
+    lines.push(pendingText.slice(0, 200))
+  } else if (phase === 'unconfigured') {
+    const s = statusForCurrentPhase()
+    lines.push('headlenss')
+    lines.push(s.text)
   } else {
-    const lastOk = history.find((h) => h.ok)
-    if (lastOk) {
-      lines.push('Last:')
-      lines.push(lastOk.text.slice(0, 320))
-    }
-    if (history.length > 0 && !history[0].ok) {
-      lines.push('')
-      lines.push(`! ${history[0].errorMsg ?? 'failed'}`)
-    }
+    lines.push('headlenss')
   }
   return lines.join('\n')
 }
@@ -351,20 +357,45 @@ async function createAndSelectSession(name: string): Promise<void> {
 }
 
 // ─── tmux output mirror ────────────────────────────────────────────────
+function setOutputDisplay(text: string, kind: 'ok' | 'muted' | 'err'): void {
+  tmuxOutputEl.textContent = text
+  tmuxOutputEl.classList.toggle('muted', kind !== 'ok')
+  tmuxOutputEl.classList.toggle('err', kind === 'err')
+}
+
 async function refreshOutput(): Promise<void> {
-  if (!serverProbeOk || !settings.sessionName) return
-  // 録音中など、レンズが他用途で埋まっているときはレンズ側更新だけスキップ
+  if (!serverProbeOk) {
+    setOutputDisplay(`(server not reachable: ${serverErrorMsg || '?'})`, 'err')
+    return
+  }
+  if (!settings.sessionName) {
+    setOutputDisplay('(no session selected)', 'muted')
+    return
+  }
   try {
     const text = await client.getOutput(settings.sessionName, TMUX_OUTPUT_LINES)
     const changed = text !== tmuxOutput
     tmuxOutput = text
-    // Dashboard
-    tmuxOutputEl.textContent = tailLines(text, TMUX_OUTPUT_DISPLAY_LINES) || '(no output)'
-    tmuxOutputEl.classList.toggle('muted', !text.trim())
-    // Lens (idleのときだけ更新が見える)
-    if (changed && phase === 'idle') void refreshG2(true)
+    if (text.trim()) {
+      setOutputDisplay(tailLines(text, TMUX_OUTPUT_DISPLAY_LINES), 'ok')
+      if (!outputFetchOkLogged) {
+        log(`getOutput ok: ${text.length} chars from "${settings.sessionName}"`)
+        outputFetchOkLogged = true
+      }
+    } else {
+      setOutputDisplay(`(empty output from session "${settings.sessionName}")`, 'muted')
+    }
+    // idle中は毎回レンズに反映 (ページが外で再描画された時にも復元できる)
+    if (phase === 'idle') void refreshG2(true)
+    void changed
   } catch (e) {
-    log(`getOutput error: ${(e as Error).message}`)
+    const msg = (e as Error).message
+    setOutputDisplay(
+      `error: ${msg}\nGET ${settings.serverBaseUrl}/api/sessions/${settings.sessionName}/output`,
+      'err',
+    )
+    log(`getOutput error: ${msg}`)
+    outputFetchOkLogged = false
   }
 }
 
@@ -993,6 +1024,23 @@ async function boot(): Promise<void> {
         if (phase !== 'recording') return
         trackPcmFrame(pcm)
         rtSession?.send(pcm)
+      },
+      // G2 アプリ画面に戻ってきたとき: ページを再生成して最新の tmux 出力を再描画
+      onForegroundEnter: () => {
+        log('foreground enter — re-rendering lens')
+        resetPageState()
+        void (async () => {
+          try {
+            await showScreen(buildG2Content(), buildG2Footer())
+          } catch (err) {
+            log(`re-render error: ${err}`)
+          }
+          void refreshOutput()
+        })()
+      },
+      onForegroundExit: () => {
+        // ページが破棄されている可能性に備え、次回入場時に createStartUpPageContainer に戻す
+        resetPageState()
       },
       onLog: (msg) => log(msg),
     })

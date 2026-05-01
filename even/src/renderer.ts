@@ -18,6 +18,11 @@ export function initRenderer(appBridge: EvenAppBridge): void {
   bridge = appBridge
 }
 
+/** Foreground 再入場後など、レンズページを再生成したいときに呼ぶ */
+export function resetPageState(): void {
+  startupRendered = false
+}
+
 async function rebuildPage(config: {
   containerTotalNum: number
   textObject?: TextContainerProperty[]
