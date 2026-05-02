@@ -99,6 +99,10 @@ const discardBtn = document.getElementById('discardBtn') as HTMLButtonElement
 const tmuxOutputEl = document.getElementById('tmuxOutput') as HTMLPreElement
 const reloadOutputBtn = document.getElementById('reloadOutputBtn') as HTMLButtonElement
 
+// Claude セッション一覧 (WebView)
+const claudeSessionsListEl = document.getElementById('claudeSessionsList') as HTMLUListElement
+const reloadClaudeBtn = document.getElementById('reloadClaudeBtn') as HTMLButtonElement
+
 // 新規 Claude セッション
 const newClaudeForm = document.getElementById('newClaudeSessionForm') as HTMLFormElement
 const newClaudeNameEl = document.getElementById('newClaudeName') as HTMLInputElement
@@ -677,7 +681,10 @@ function setOutputDisplay(text: string, kind: 'ok' | 'muted' | 'err'): void {
 
 /** Claude Code 起動中の tmux session 一覧を取得 (rootlist 用) */
 async function reloadClaudeSessions(): Promise<void> {
-  if (!serverProbeOk) return
+  if (!serverProbeOk) {
+    renderClaudeSessionsList()
+    return
+  }
   try {
     const next = await client.listClaudeSessions()
     const changed =
@@ -687,6 +694,8 @@ async function reloadClaudeSessions(): Promise<void> {
     if (rootCursor >= claudeSessions.length) {
       rootCursor = Math.max(0, claudeSessions.length - 1)
     }
+    // WebView の一覧は毎回更新 (active 切り替えなど含む)
+    renderClaudeSessionsList()
     // rootlist を見ている間は中身が変わったら即レンズ再描画
     if (changed && phase === 'rootlist') void refreshG2(true)
   } catch (e) {
@@ -1416,6 +1425,7 @@ function openSelectedFromRoot(): void {
   paintStatus()
   void refreshG2(true)
   updateRecordButton()
+  renderClaudeSessionsList()  // WebView 側のハイライトを更新
   void refreshClaudeData()
 }
 
@@ -1542,6 +1552,88 @@ function showToast(text: string, ms = 2500): void {
     toastEl.classList.remove('visible')
     setTimeout(() => { toastEl.hidden = true }, 200)
   }, ms)
+}
+
+// ─── Claude セッション一覧 (WebView) ───────────────────────────────────
+function claudeStatusLabel(status: string): string {
+  switch (status) {
+    case 'idle': return t('claudeStatusIdle')
+    case 'busy': return t('claudeStatusBusy')
+    case 'waiting-permission': return t('claudeStatusWaitPerm')
+    case 'waiting-question': return t('claudeStatusWaitQ')
+    default: return status
+  }
+}
+
+function renderClaudeSessionsList(): void {
+  if (!claudeSessionsListEl) return
+  if (!serverProbeOk) {
+    claudeSessionsListEl.innerHTML = `<li class="claude-empty">${escapeHtml(serverErrorMsg || '(server not reachable)')}</li>`
+    return
+  }
+  if (claudeSessions.length === 0) {
+    claudeSessionsListEl.innerHTML = `<li class="claude-empty">${escapeHtml(t('claudeSessionsEmpty'))}</li>`
+    return
+  }
+  claudeSessionsListEl.innerHTML = ''
+  for (const s of claudeSessions) {
+    const li = document.createElement('li')
+    li.className = 'claude-item' + (s.tmuxSessionName === settings.sessionName ? ' active' : '')
+    li.dataset.name = s.tmuxSessionName
+    const status = s.status
+    li.innerHTML =
+      `<span class="claude-status" data-status="${escapeAttr(status)}" title="${escapeAttr(claudeStatusLabel(status))}">●</span>` +
+      `<div class="claude-info">` +
+        `<div class="claude-name">${escapeHtml(s.tmuxSessionName)}</div>` +
+        `<div class="claude-cwd">${escapeHtml(s.cwd || '~')}</div>` +
+      `</div>` +
+      `<button class="claude-kill" data-action="kill" aria-label="kill ${escapeAttr(s.tmuxSessionName)}">✕</button>`
+    claudeSessionsListEl.appendChild(li)
+  }
+}
+
+claudeSessionsListEl.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement
+  const li = target.closest<HTMLLIElement>('.claude-item')
+  if (!li) return
+  const name = li.dataset.name
+  if (!name) return
+  // ✕ ボタンが押されたかどうかを優先判定
+  if (target.closest('.claude-kill')) {
+    e.stopPropagation()
+    void killClaudeSessionFromList(name)
+    return
+  }
+  // 通常クリック → 選択 (settings.sessionName を更新)
+  if (settings.sessionName !== name) {
+    settings.sessionName = name
+    void persistSettings()
+    renderClaudeSessionsList()
+    renderSessionPills()
+    log(`Active session set: ${name}`)
+    if (phase === 'rootlist') {
+      // rootlist のカーソル位置も合わせる
+      const idx = claudeSessions.findIndex((s) => s.tmuxSessionName === name)
+      if (idx >= 0) rootCursor = idx
+      void refreshG2(true)
+    }
+  }
+})
+
+reloadClaudeBtn.addEventListener('click', () => {
+  void reloadClaudeSessions()
+})
+
+async function killClaudeSessionFromList(name: string): Promise<void> {
+  const msg = t('claudeKillConfirm').replace('{name}', name)
+  if (!confirm(msg)) return
+  try {
+    await client.killSession(name)
+    log(`Killed Claude session: ${name}`)
+    await reloadClaudeSessions()
+  } catch (e) {
+    log(`killSession error: ${(e as Error).message}`)
+  }
 }
 
 // ─── 新規 Claude セッション ────────────────────────────────────────────

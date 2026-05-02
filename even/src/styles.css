@@ -29,6 +29,75 @@ body[data-view="dashboard"] details.card:not(#settingsDetails) {
   display: none !important;
 }
 
+/* Claude セッション一覧 (WebView 用) */
+.claude-sessions {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.claude-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.claude-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border-left: 3px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.claude-item.active {
+  border-left-color: var(--accent);
+  background: rgba(37,99,235,0.08);
+}
+.claude-item:hover { background: #2a2a32; }
+.claude-item.active:hover { background: rgba(37,99,235,0.12); }
+.claude-status {
+  font-size: 0.95rem;
+  width: 14px;
+  text-align: center;
+}
+.claude-status[data-status="idle"]               { color: var(--ok); }
+.claude-status[data-status="busy"]               { color: var(--warn); animation: pulse 1.4s ease-in-out infinite; }
+.claude-status[data-status="waiting-permission"] { color: var(--warn); }
+.claude-status[data-status="waiting-question"]   { color: var(--warn); }
+.claude-info { min-width: 0; }
+.claude-name { font-weight: 500; word-break: break-all; }
+.claude-cwd  {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 2px;
+  word-break: break-all;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.claude-kill {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.claude-kill:hover { color: var(--err); background: rgba(255,255,255,0.04); }
+.claude-empty {
+  color: var(--muted);
+  font-size: 0.88rem;
+  padding: 8px 4px;
+  text-align: center;
+}
+
 /* 新規 Claude セッション フォーム */
 .new-claude-session {
   background: var(--surface);

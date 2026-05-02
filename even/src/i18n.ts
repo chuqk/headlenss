@@ -29,6 +29,16 @@ const STRINGS = {
   // ─── Top bar ─────────────────────────────────────────────────
   sessionLabel:   { en: '→ session',                            ja: '→ session' },
 
+  // ─── Claude Sessions list ────────────────────────────────────
+  claudeSessionsHead:    { en: 'Claude sessions',               ja: 'Claude セッション' },
+  claudeSessionsEmpty:   { en: '(no Claude sessions)',          ja: '(Claude セッションなし)' },
+  claudeSessionsLoading: { en: 'Loading…',                      ja: '読み込み中…' },
+  claudeStatusIdle:      { en: 'idle',                          ja: 'アイドル' },
+  claudeStatusBusy:      { en: 'busy',                          ja: 'ビジー' },
+  claudeStatusWaitPerm:  { en: 'awaiting permission',           ja: '承認待ち' },
+  claudeStatusWaitQ:     { en: 'awaiting question',             ja: '質問待ち' },
+  claudeKillConfirm:     { en: 'Kill session "{name}"?',        ja: 'セッション "{name}" を終了しますか?' },
+
   // ─── New Claude Session ──────────────────────────────────────
   newClaudeHead:  { en: 'New Claude session',                   ja: '新規 Claude セッション' },
   newClaudeName:  { en: 'Session name',                         ja: 'セッション名' },
