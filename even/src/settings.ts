@@ -1,4 +1,5 @@
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
+import type { Language } from './i18n'
 
 // 設定の永続化。bridge.setLocalStorage と localStorage の両方に書き込み、
 // G2アプリ環境とブラウザ単体テストの両方で同じ値が読めるようにする。
@@ -14,6 +15,7 @@ export type Settings = {
   speechmaticsApiKey: string
   speechmaticsLang: string
   speechmaticsOperatingPoint: OperatingPoint
+  language: Language
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -23,6 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   speechmaticsApiKey: '',
   speechmaticsLang: 'ja',
   speechmaticsOperatingPoint: 'enhanced',
+  language: 'ja',
 }
 
 function parse(json: string | null | undefined): Settings | null {
@@ -40,6 +43,7 @@ function parse(json: string | null | undefined): Settings | null {
         raw.speechmaticsOperatingPoint === 'standard' || raw.speechmaticsOperatingPoint === 'enhanced'
           ? raw.speechmaticsOperatingPoint
           : DEFAULT_SETTINGS.speechmaticsOperatingPoint,
+      language: raw.language === 'en' || raw.language === 'ja' ? raw.language : DEFAULT_SETTINGS.language,
     }
   } catch {
     return null

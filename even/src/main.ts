@@ -24,6 +24,14 @@ import {
   type Settings,
 } from './settings'
 import { SpeechmaticsRT } from './speechmatics-rt'
+import {
+  applyTranslations,
+  getLanguage,
+  LANGUAGE_LABELS,
+  setLanguage,
+  t,
+  type Language,
+} from './i18n'
 
 // ───────────────────────────────────────────────────────────────────────
 // 利用シーン: G2 をかけてポケットのスマホ (このWebView) で動かす。
@@ -41,6 +49,11 @@ const G2_REFRESH_THROTTLE_MS = 250
 
 // ─── DOM ───────────────────────────────────────────────────────────────
 const bodyEl = document.body
+
+// 言語セレクタ (左上固定)
+const langToggleBtn = document.getElementById('langToggle') as HTMLButtonElement
+const langCurrentEl = document.getElementById('langCurrent') as HTMLSpanElement
+const langDropdownEl = document.getElementById('langDropdown') as HTMLUListElement
 
 // Onboarding
 const obSteps = Array.from(document.querySelectorAll<HTMLDivElement>('.ob-step'))
@@ -155,30 +168,30 @@ function log(msg: string): void {
 function statusForCurrentPhase(): { dot: string; text: string } {
   switch (phase) {
     case 'boot':
-      return { dot: 'idle', text: 'Booting…' }
+      return { dot: 'idle', text: t('g2Booting') }
     case 'rootlist':
-      return { dot: 'ready', text: `Claude sessions (${claudeSessions.length})` }
+      return { dot: 'ready', text: `${t('g2Sessions')} (${claudeSessions.length})` }
     case 'cc-response':
-      return { dot: 'busy', text: 'Claude 応答待ち' }
+      return { dot: 'busy', text: t('g2ClaudeAck') }
     case 'recording':
-      return { dot: 'rec', text: `Recording ${getRecordingSeconds().toFixed(1)}s` }
+      return { dot: 'rec', text: `${t('g2Recording')} ${getRecordingSeconds().toFixed(1)}s` }
     case 'finalizing':
-      return { dot: 'busy', text: 'Finalizing…' }
+      return { dot: 'busy', text: t('g2Finalizing') }
     case 'pending':
-      return { dot: 'busy', text: '↑ 送信 / ↓ 破棄' }
+      return { dot: 'busy', text: t('g2PendingHint') }
     case 'sending':
-      return { dot: 'busy', text: `Sending → ${settings.sessionName || '—'}` }
+      return { dot: 'busy', text: `${t('g2Sending')} ${settings.sessionName || '—'}` }
     case 'error':
       return { dot: 'err', text: serverErrorMsg || 'Error' }
     case 'unconfigured':
-      if (!bridge) return { dot: 'err', text: 'G2 bridge not connected' }
-      if (!settings.serverBaseUrl) return { dot: 'idle', text: 'Set Server URL' }
-      if (!settings.speechmaticsApiKey) return { dot: 'idle', text: 'Set Speechmatics key' }
-      if (!serverProbeOk) return { dot: 'err', text: serverErrorMsg || 'Server unreachable' }
-      return { dot: 'idle', text: 'Configure session' }
+      if (!bridge) return { dot: 'err', text: t('g2BridgeMissing') }
+      if (!settings.serverBaseUrl) return { dot: 'idle', text: t('g2SetUrl') }
+      if (!settings.speechmaticsApiKey) return { dot: 'idle', text: t('g2SetKey') }
+      if (!serverProbeOk) return { dot: 'err', text: serverErrorMsg || t('g2Unreachable') }
+      return { dot: 'idle', text: t('g2ConfigureSess') }
     case 'idle':
     default:
-      return { dot: 'ready', text: `[${settings.sessionName || '?'}] Ready` }
+      return { dot: 'ready', text: `[${settings.sessionName || '?'}] ${t('g2Ready')}` }
   }
 }
 
@@ -299,11 +312,15 @@ function buildG2Content(): string {
     lines.push('')
     lines.push(pendingText.slice(0, 200))
   } else if (phase === 'unconfigured') {
+    // 初期設定中はそれを大きく明示する
     const s = statusForCurrentPhase()
-    lines.push('headlenss')
-    lines.push(s.text)
+    lines.push(`[${t('g2Setup')}]`)
+    lines.push('')
+    lines.push(t('g2SetupHint'))
+    lines.push('')
+    lines.push('· ' + s.text)
   } else {
-    lines.push('headlenss')
+    lines.push(t('appName'))
   }
   return lines.join('\n')
 }
@@ -324,7 +341,9 @@ function tailLines(text: string, n: number): string {
 function buildRootListView(): string {
   const items = claudeSessions
   if (items.length === 0) {
-    return '(Claude Code が動いている tmux が無い)\n\ntmux 内で `claude` を起動してください'
+    return getLanguage() === 'en'
+      ? '(no Claude Code session)\n\nStart `claude` inside a tmux session'
+      : '(Claude Code が動いている tmux が無い)\n\ntmux 内で `claude` を起動してください'
   }
   const total = items.length
   let start = rootCursor - Math.floor(ROOT_LIST_VISIBLE / 2)
@@ -466,18 +485,18 @@ function resetScroll(): void {
 function buildG2Footer(): string {
   switch (phase) {
     case 'rootlist':
-      if (claudeSessions.length === 0) return 'No Claude Code session'
-      return `Click: Open  ↑↓ Nav  (${rootCursor + 1}/${claudeSessions.length})`
+      if (claudeSessions.length === 0) return t('g2NoSessionsBrief')
+      return `${t('g2FootRoot')}  (${rootCursor + 1}/${claudeSessions.length})`
     case 'cc-response':
-      return '↑↓ 選択  Click: 確定'
-    case 'recording': return 'Click: Stop'
-    case 'finalizing': return 'Finalizing…'
-    case 'pending': return '↑ Send  ↓ Discard'
-    case 'sending': return 'Sending…'
-    case 'unconfigured': return 'Configure in app'
+      return getLanguage() === 'en' ? '↑↓ Choose  Click: OK' : '↑↓ 選択  Click: 確定'
+    case 'recording': return t('g2FootRecOff')
+    case 'finalizing': return t('g2FootFinalizing')
+    case 'pending': return t('g2FootPending')
+    case 'sending': return t('g2FootSending')
+    case 'unconfigured': return t('g2FootSetup')
     case 'idle':
-      if (isScrolled()) return `↑ older  ↓ newer  (back ${scrollOffset})`
-      return 'Click: Rec  ↑↓ Scroll  ⊕⊕ Back'
+      if (isScrolled()) return `${t('g2FootScrolled')}  (back ${scrollOffset})`
+      return t('g2FootIdle')
     default: return ''
   }
 }
@@ -1424,8 +1443,80 @@ function escapeAttr(s: string): string {
   return escapeHtml(s)
 }
 
+function refreshLangSelectorLabel(): void {
+  const cur = getLanguage()
+  langCurrentEl.textContent = LANGUAGE_LABELS[cur]
+  langDropdownEl.querySelectorAll<HTMLLIElement>('li[data-lang]').forEach((li) => {
+    li.classList.toggle('active', li.dataset.lang === cur)
+  })
+}
+
+function setupLanguageSelector(): void {
+  langToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const expanded = !langDropdownEl.hasAttribute('hidden')
+    if (expanded) {
+      langDropdownEl.setAttribute('hidden', '')
+      langToggleBtn.setAttribute('aria-expanded', 'false')
+    } else {
+      langDropdownEl.removeAttribute('hidden')
+      langToggleBtn.setAttribute('aria-expanded', 'true')
+    }
+  })
+  langDropdownEl.addEventListener('click', (e) => {
+    const li = (e.target as HTMLElement).closest<HTMLLIElement>('li[data-lang]')
+    if (!li) return
+    const lang = li.dataset.lang as Language
+    if (lang !== 'en' && lang !== 'ja') return
+    void changeLanguage(lang)
+    langDropdownEl.setAttribute('hidden', '')
+    langToggleBtn.setAttribute('aria-expanded', 'false')
+  })
+  document.addEventListener('click', (e) => {
+    if (!langDropdownEl.hasAttribute('hidden')) {
+      const target = e.target as Node
+      if (!langToggleBtn.contains(target) && !langDropdownEl.contains(target)) {
+        langDropdownEl.setAttribute('hidden', '')
+        langToggleBtn.setAttribute('aria-expanded', 'false')
+      }
+    }
+  })
+}
+
+async function changeLanguage(lang: Language): Promise<void> {
+  if (settings.language === lang) return
+  settings.language = lang
+  setLanguage(lang)
+  applyTranslations()
+  refreshLangSelectorLabel()
+  // ステータスバー / Pending UI / 履歴の表示文字列も即時更新
+  paintStatus()
+  updateRecordButton()
+  updatePendingUI()
+  renderSettings()
+  renderHistory()
+  setProbeText('muted', t('unset'))
+  if (settings.serverBaseUrl) {
+    // probe text を再計算するために軽く呼び直し
+    void probeServer()
+  }
+  await persistSettings()
+  // G2 レンズも「言語切替」を 1 つの画面遷移と扱って強制再描画する。
+  // textContainerUpgrade だけだとシミュレータ側で更新を取りこぼすケースがあるので、
+  // resetPageState + showScreen で createStartUpPageContainer から作り直す。
+  if (bridge) {
+    resetPageState()
+    try {
+      await showScreen(buildG2Content(), buildG2Footer())
+    } catch (err) {
+      log(`G2 re-render on lang change error: ${err}`)
+    }
+  }
+}
+
 async function boot(): Promise<void> {
   setupLogToolbar()
+  setupLanguageSelector()
 
   // 1. Bridge 接続 (必須)
   try {
@@ -1506,8 +1597,12 @@ async function boot(): Promise<void> {
 
   // 3. 設定ロード
   settings = await loadSettings(bridge)
-  log(`Loaded settings: server=${settings.serverBaseUrl || '(none)'} session=${settings.sessionName}`)
+  log(`Loaded settings: server=${settings.serverBaseUrl || '(none)'} session=${settings.sessionName} lang=${settings.language}`)
   applyClientBase()
+  // 設定の言語を反映 (WebView の data-i18n を一斉に書き換え + セレクタラベル)
+  setLanguage(settings.language)
+  applyTranslations()
+  refreshLangSelectorLabel()
   renderSettings()
 
   // 4. UI events
@@ -1531,7 +1626,21 @@ async function boot(): Promise<void> {
   if (settings.serverBaseUrl) {
     await probeServer()
   } else {
-    setProbeText('muted', '未設定')
+    setProbeText('muted', t('unset'))
+  }
+
+  // boot 直後の最初の showScreen は phase='boot' で行われ、その後 recomputePhase 内の
+  // refreshG2 は textContainerUpgrade 経由で更新されるが、シミュレータの実装によっては
+  // この差分更新が反映されないケースがある。boot 末でもう一度 createStartUpPageContainer
+  // から作り直して、現在の phase ('unconfigured' / 'rootlist' / 'idle') の内容を確実に
+  // レンズへ届ける。
+  if (bridge) {
+    resetPageState()
+    try {
+      await showScreen(buildG2Content(), buildG2Footer())
+    } catch (err) {
+      log(`G2 final render error: ${err}`)
+    }
   }
 
   // セッション一覧を定期的に更新
