@@ -1,10 +1,19 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve as pathResolve } from 'node:path';
 import { detectClaudeSessions } from './process-detect.ts';
 import * as store from './store.ts';
 import { resolveTmuxSessionName } from './tmux-resolver.ts';
-import { extractLastAssistantText } from './transcript.ts';
+import { extractChatFromTranscript, extractLastAssistantText } from './transcript.ts';
 import type { AskQuestion, HookDecision, RespondInput, SessionStatus } from './types.ts';
+
+/** cwd と sessionId から transcript ファイルのパスを推定する */
+function transcriptPathFor(cwd: string, sessionId: string): string {
+  const encoded = cwd.replace(/\//g, '-');
+  return pathResolve(homedir(), '.claude/projects', encoded, `${sessionId}.jsonl`);
+}
 
 export const claudeRouter = new Hono();
 
@@ -31,6 +40,7 @@ type HookPayload = {
 claudeRouter.post('/hooks/session-start', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as HookPayload;
   const tmuxName = await getTmuxName(c);
+  console.log(`[hook] session-start tmux=${tmuxName} src=${body.source ?? ''}`);
   if (!tmuxName) return c.json({});
   store.upsertSession({
     ccSessionId: body.session_id ?? '',
@@ -42,8 +52,12 @@ claudeRouter.post('/hooks/session-start', async (c) => {
 });
 
 claudeRouter.post('/hooks/session-end', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as HookPayload;
   const tmuxName = await getTmuxName(c);
-  if (tmuxName) store.removeSession(tmuxName);
+  console.log(`[hook] session-end tmux=${tmuxName} src=${body.source ?? ''} (NOT clearing chat)`);
+  // 注意: SessionEnd は prompt_input_exit など軽い理由でも発火するため、
+  // ここで session を削除すると chat 履歴がリセットされて壊れる。
+  // 起動中判定はレジストリ検出 (process-detect) に任せ、ここでは何もしない。
   return c.json({});
 });
 
@@ -61,6 +75,7 @@ claudeRouter.post('/hooks/user-prompt-submit', async (c) => {
     });
   }
   const text = (body.prompt ?? '').trim();
+  console.log(`[hook] user-prompt tmux=${tmuxName} len=${text.length}`);
   if (text) store.appendChat(tmuxName, 'user', text);
   return c.json({});
 });
@@ -68,6 +83,7 @@ claudeRouter.post('/hooks/user-prompt-submit', async (c) => {
 claudeRouter.post('/hooks/stop', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as HookPayload;
   const tmuxName = await getTmuxName(c);
+  console.log(`[hook] stop tmux=${tmuxName} transcript=${(body.transcript_path ?? '').slice(-40)}`);
   if (!tmuxName) return c.json({});
   if (!store.getSession(tmuxName)) {
     store.upsertSession({
@@ -80,6 +96,7 @@ claudeRouter.post('/hooks/stop', async (c) => {
   const transcriptPath = body.transcript_path ?? '';
   if (transcriptPath) {
     const text = await extractLastAssistantText(transcriptPath);
+    console.log(`[hook] stop -> assistant text len=${text.length}`);
     if (text) store.appendChat(tmuxName, 'assistant', text);
   }
   return c.json({});
@@ -206,11 +223,39 @@ claudeRouter.get('/claude/sessions', async (c) => {
   return c.json({ sessions: merged });
 });
 
-claudeRouter.get('/claude/sessions/:tmuxName/chat', (c) => {
+claudeRouter.get('/claude/sessions/:tmuxName/chat', async (c) => {
   const tmuxName = c.req.param('tmuxName');
   const session = store.getSession(tmuxName);
-  if (!session) return c.json({ error: 'not found' }, 404);
-  return c.json({ chat: session.chat });
+
+  // 現在動いてる Claude Code を registry から探して transcript path を割り出す
+  const detected = await detectClaudeSessions();
+  const det = detected.find((d) => d.tmuxSessionName === tmuxName);
+
+  // hook 経由で記録された chat
+  const hookChat = session?.chat ?? [];
+
+  // transcript を読んで履歴を補完 (hook では取りこぼす過去分も拾える)
+  let transcriptChat: Array<{ role: 'user' | 'assistant'; text: string; ts: number }> = [];
+  if (det && det.cwd && det.ccSessionId) {
+    const path = transcriptPathFor(det.cwd, det.ccSessionId);
+    if (existsSync(path)) {
+      transcriptChat = await extractChatFromTranscript(path, 200);
+    }
+  }
+
+  // hook の最新分が transcript から漏れてる可能性に備えてマージ。
+  // transcript を base にして、hook側の項目を text 一致で重複排除。
+  const seen = new Set(transcriptChat.map((m) => `${m.role}:${m.text}`));
+  const merged = [...transcriptChat];
+  for (const m of hookChat) {
+    const key = `${m.role}:${m.text}`;
+    if (!seen.has(key)) merged.push(m);
+  }
+
+  if (merged.length === 0 && !session) {
+    return c.json({ error: 'not found' }, 404);
+  }
+  return c.json({ chat: merged });
 });
 
 claudeRouter.get('/claude/sessions/:tmuxName/pending', (c) => {
