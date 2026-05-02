@@ -127,6 +127,7 @@ let sessionsRefreshTimer: ReturnType<typeof setInterval> | null = null
 let probeDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let rtSession: SpeechmaticsRT | null = null
 let liveTranscript = '' // 録音中のpartial+final結合表示用
+let recordingReady = false // RT接続+G2マイク起動が完了して実際に音声を取り始めたか
 let pendingText = ''    // 確定待ちのテキスト (送信 or 破棄選択前)
 let tmuxOutput = ''     // (legacy) tmux 出力 — 現状ダッシュボードとレンズには使わない
 let outputPollTimer: ReturnType<typeof setInterval> | null = null
@@ -279,7 +280,13 @@ function buildG2Content(): string {
   if (phase === 'recording') {
     lines.push(`Recording ${getRecordingSeconds().toFixed(1)}s`)
     lines.push('')
-    lines.push('▌ ' + (liveTranscript || '...'))
+    if (liveTranscript) {
+      lines.push('▌ ' + liveTranscript)
+    } else if (!recordingReady) {
+      lines.push('▌ 接続中…')
+    } else {
+      lines.push('▌ 録音開始 — お話しください')
+    }
   } else if (phase === 'finalizing') {
     lines.push('Finalizing…')
     lines.push('▌ ' + (liveTranscript || '(processing)'))
@@ -1020,6 +1027,7 @@ async function startRecording(): Promise<void> {
 
   resetPcmCounter()
   liveTranscript = ''
+  recordingReady = false
   durationEl.textContent = '0.0s'
   resetScroll()
 
@@ -1083,6 +1091,12 @@ async function startRecording(): Promise<void> {
       if (ok === false) {
         log('audioControl(true) returned false')
         revertToIdle()
+        return
+      }
+      // 接続&マイク起動完了 → レンズ表示を「録音中」に切り替え
+      if (rtSession === session && phase === 'recording') {
+        recordingReady = true
+        void refreshG2(true)
       }
     } catch (err) {
       log(`audioControl error: ${err}`)
