@@ -28,11 +28,15 @@ async function rebuildPage(config: {
   textObject?: TextContainerProperty[]
 }): Promise<void> {
   if (!bridge) return
+  const mainContent = config.textObject?.find((t) => t.containerID === 2)?.content ?? ''
+  const previewLine = mainContent.split('\n')[0].slice(0, 40)
   if (!startupRendered) {
+    console.log(`[renderer] createStartUpPageContainer (main: "${previewLine}")`)
     await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(config))
     startupRendered = true
     return
   }
+  console.log(`[renderer] rebuildPageContainer (main: "${previewLine}")`)
   await bridge.rebuildPageContainer(new RebuildPageContainer(config))
 }
 
@@ -90,6 +94,8 @@ export async function showScreen(content: string, footer: string): Promise<void>
 
 export async function updateContent(content: string): Promise<void> {
   if (!bridge) return
+  const previewLine = content.split('\n')[0].slice(0, 40)
+  console.log(`[renderer] textContainerUpgrade #2 (main: "${previewLine}")`)
   await bridge.textContainerUpgrade(
     new TextContainerUpgrade({
       containerID: 2,
