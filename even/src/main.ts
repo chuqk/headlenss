@@ -40,7 +40,8 @@ import {
 // ───────────────────────────────────────────────────────────────────────
 
 const BRIDGE_TIMEOUT_MS = 4000
-const MAX_RECORDING_SEC = 28 // G2の連続録音は30秒制限の手前で安全停止
+const G2_RECORDING_LIMIT_SEC = 30 // G2 ハードウェアの連続録音上限。UI カウントダウンの起点
+const MAX_RECORDING_SEC = 28      // 30秒の少し手前で安全に自動停止する閾値
 const MIN_RECORDING_SEC = 0.2
 const HISTORY_LIMIT = 20
 const PROBE_DEBOUNCE_MS = 500
@@ -305,8 +306,7 @@ function buildG2Content(): string {
   // それ以外の状態は状態 + 内容を表示
   const lines: string[] = []
   if (phase === 'recording') {
-    lines.push(`Recording ${getRecordingSeconds().toFixed(1)}s`)
-    lines.push('')
+    // 秒数表示は header に移動。content は live transcript (もしくは状態メッセージ) のみ
     if (liveTranscript) {
       lines.push('▌ ' + liveTranscript)
     } else if (!recordingReady) {
@@ -315,7 +315,6 @@ function buildG2Content(): string {
       lines.push('▌ 録音開始 — お話しください')
     }
   } else if (phase === 'finalizing') {
-    lines.push('Finalizing…')
     lines.push('▌ ' + (liveTranscript || '(processing)'))
   } else if (phase === 'pending') {
     // 件数表示 (1件なら省略、複数なら "Pending (3 sentences)" のように)
@@ -523,7 +522,11 @@ function buildG2Header(): string {
     case 'boot':         return t('g2HeadBoot')
     case 'unconfigured': return t('g2HeadSetup')
     case 'rootlist':     return t('g2HeadRoot')
-    case 'recording':    return `${t('g2HeadRecording')}  ${getRecordingSeconds().toFixed(1)}s`
+    case 'recording': {
+      // 30秒制限から残り何秒かをカウントダウン表示する。安全停止 (28s) で表示は約 2s となる
+      const remaining = Math.max(0, G2_RECORDING_LIMIT_SEC - getRecordingSeconds())
+      return `${t('g2HeadRecording')}  ${remaining.toFixed(1)}s`
+    }
     case 'finalizing':   return t('g2HeadFinalizing')
     case 'pending': {
       const n = pendingSentences.length
