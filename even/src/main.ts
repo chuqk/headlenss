@@ -1230,6 +1230,18 @@ function discardPending(): void {
   recomputePhase()
 }
 
+/** pending 中に下スクロール = 確定テキストの削除のみ (画面遷移はしない) */
+function clearPendingText(): void {
+  if (phase !== 'pending') return
+  if (!pendingText && !liveTranscript) return
+  log('pending text cleared')
+  pendingText = ''
+  liveTranscript = ''
+  updatePendingUI()
+  paintStatus()
+  void refreshG2(true)
+}
+
 async function toggleRecording(): Promise<void> {
   if (phase === 'finalizing' || phase === 'sending') return
   if (phase === 'recording') {
@@ -1408,9 +1420,10 @@ async function boot(): Promise<void> {
   if (bridge) {
     initRenderer(bridge)
     setEventHandlers({
-      // rootlist: 上下=カーソル / click=open
-      // pending:  上=送信 / 下=破棄
-      // idle:     上=過去ログへ / 下=新しい方へ (lens内独自スクロール)
+      // rootlist: 上下=カーソル / click=open / dbl=OS終了
+      // pending:  上=送信 / 下=テキスト削除 / dbl=破棄して idle へ
+      // idle:     上=過去ログ / 下=新しい方へ / dbl=root へ戻る
+      // cc-response: 上下=選択肢移動 / dbl=キャンセルして idle へ
       onScrollUp: () => {
         if (phase === 'rootlist') moveRootCursor(-1)
         else if (phase === 'pending') void confirmAndSend()
@@ -1419,14 +1432,15 @@ async function boot(): Promise<void> {
       },
       onScrollDown: () => {
         if (phase === 'rootlist') moveRootCursor(1)
-        else if (phase === 'pending') discardPending()
+        else if (phase === 'pending') clearPendingText() // 削除のみ。idleに戻すのはダブルタップ
         else if (phase === 'idle') scrollForward()
         else if (phase === 'cc-response') moveRespondCursor(1)
       },
       onClick: () => { void toggleRecording() },
-      // 二重クリック: session 画面 → root に戻る、 root画面ではOSの終了ダイアログ
+      // 二重クリック: 各 phase での「戻る/キャンセル」操作
       onDoubleClick: () => {
         if (phase === 'idle') backToRoot()
+        else if (phase === 'pending') discardPending() // 破棄して idle へ
         else if (phase === 'cc-response') {
           // 応答キャンセル → idle に戻る
           phase = 'idle'
