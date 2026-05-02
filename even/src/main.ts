@@ -1584,13 +1584,27 @@ function renderClaudeSessionsList(): void {
     li.className = 'claude-item' + (s.tmuxSessionName === settings.sessionName ? ' active' : '')
     li.dataset.name = s.tmuxSessionName
     const status = s.status
+    // ポーリング再描画で pending 確認状態が失われないよう、Map を見て復元する
+    const isKillPending = pendingKillTimers.has(s.tmuxSessionName)
+    const isKilling = killingSessions.has(s.tmuxSessionName)
+    let killClass = 'claude-kill'
+    let killLabel = '✕'
+    let killDisabled = ''
+    if (isKilling) {
+      killClass = 'claude-kill kill-busy'
+      killLabel = `${escapeHtml(t('claudeKillingBtn'))}<span class="kill-spinner" aria-hidden="true"></span>`
+      killDisabled = ' disabled'
+    } else if (isKillPending) {
+      killClass = 'claude-kill kill-pending'
+      killLabel = escapeHtml(t('claudeKillConfirmBtn'))
+    }
     li.innerHTML =
       `<span class="claude-status" data-status="${escapeAttr(status)}" title="${escapeAttr(claudeStatusLabel(status))}">●</span>` +
       `<div class="claude-info">` +
         `<div class="claude-name">${escapeHtml(s.tmuxSessionName)}</div>` +
         `<div class="claude-cwd">${escapeHtml(s.cwd || '~')}</div>` +
       `</div>` +
-      `<button class="claude-kill" data-action="kill" aria-label="kill ${escapeAttr(s.tmuxSessionName)}">✕</button>`
+      `<button class="${killClass}" data-action="kill" aria-label="kill ${escapeAttr(s.tmuxSessionName)}"${killDisabled}>${killLabel}</button>`
     claudeSessionsListEl.appendChild(li)
   }
 }
@@ -1602,9 +1616,10 @@ claudeSessionsListEl.addEventListener('click', (e) => {
   const name = li.dataset.name
   if (!name) return
   // ✕ ボタンが押されたかどうかを優先判定
-  if (target.closest('.claude-kill')) {
+  const killBtn = target.closest<HTMLButtonElement>('.claude-kill')
+  if (killBtn) {
     e.stopPropagation()
-    void killClaudeSessionFromList(name)
+    handleKillButtonClick(name, killBtn)
     return
   }
   // 通常クリック → 選択 (settings.sessionName を更新)
@@ -1627,15 +1642,58 @@ reloadClaudeBtn.addEventListener('click', () => {
   void reloadClaudeSessions()
 })
 
-async function killClaudeSessionFromList(name: string): Promise<void> {
-  const msg = t('claudeKillConfirm').replace('{name}', name)
-  if (!confirm(msg)) return
+/**
+ * 2タップ式の kill 確認。
+ *  1回目: ✕ → "確定?" (赤色) に変化、3 秒で自動 revert
+ *  2回目: 同じ名前で再タップ → 実際に kill 実行
+ *
+ * Even Realities WebView (Flutter InAppWebView) は window.confirm が
+ * 実装されておらず常に false を返す模様。confirm を使わずに WebView
+ * 内だけで完結する確認 UI を組む。
+ */
+const pendingKillTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// 確定後 → 実際にリストから消えるまで「停止中…」スピナーを出すための追跡
+const killingSessions = new Set<string>()
+
+function handleKillButtonClick(name: string, btn: HTMLButtonElement): void {
+  if (killingSessions.has(name)) return  // 二重実行防止
+  const existing = pendingKillTimers.get(name)
+  if (existing) {
+    // 2 回目: 確定 → 実行
+    clearTimeout(existing)
+    pendingKillTimers.delete(name)
+    void doKillClaudeSession(name)
+    return
+  }
+  // 1 回目: 確認状態へ遷移
+  btn.classList.add('kill-pending')
+  btn.textContent = t('claudeKillConfirmBtn')
+  const timer = setTimeout(() => {
+    pendingKillTimers.delete(name)
+    // DOM が再描画で消えてる可能性に備えて null チェック
+    if (btn.isConnected) {
+      btn.classList.remove('kill-pending')
+      btn.textContent = '✕'
+    }
+  }, 3000)
+  pendingKillTimers.set(name, timer)
+}
+
+async function doKillClaudeSession(name: string): Promise<void> {
+  log(`Killing Claude session: ${name}`)
+  killingSessions.add(name)
+  // 「停止中…」表示を即時反映
+  renderClaudeSessionsList()
   try {
     await client.killSession(name)
-    log(`Killed Claude session: ${name}`)
+    log(`Killed: ${name}`)
     await reloadClaudeSessions()
   } catch (e) {
     log(`killSession error: ${(e as Error).message}`)
+  } finally {
+    killingSessions.delete(name)
+    // 失敗時もボタンを通常表示に戻す
+    renderClaudeSessionsList()
   }
 }
 

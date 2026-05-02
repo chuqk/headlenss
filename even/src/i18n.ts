@@ -38,6 +38,8 @@ const STRINGS = {
   claudeStatusWaitPerm:  { en: 'awaiting permission',           ja: '承認待ち' },
   claudeStatusWaitQ:     { en: 'awaiting question',             ja: '質問待ち' },
   claudeKillConfirm:     { en: 'Kill session "{name}"?',        ja: 'セッション "{name}" を終了しますか?' },
+  claudeKillConfirmBtn:  { en: 'Confirm?',                      ja: '確定?' },
+  claudeKillingBtn:      { en: 'Killing…',                      ja: '停止中…' },
 
   // ─── New Claude Session ──────────────────────────────────────
   newClaudeHead:  { en: 'New Claude session',                   ja: '新規 Claude セッション' },
