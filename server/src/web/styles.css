@@ -209,15 +209,3 @@ button {
   /* スマホでブラウザのデフォルト touch スクロールを抑止して xterm.js 側に渡す */
   touch-action: none;
 }
-
-/* xterm.js のビューポートに出るスクロールバーを隠す。
-   スクロール自体はホイール/タッチ/キーボードで動作するので機能は維持される。 */
-.terminal-container .xterm-viewport {
-  scrollbar-width: none;            /* Firefox */
-  -ms-overflow-style: none;         /* 旧 IE/Edge */
-}
-.terminal-container .xterm-viewport::-webkit-scrollbar {
-  display: none;                    /* WebKit (Safari/Chrome) */
-  width: 0;
-  height: 0;
-}
