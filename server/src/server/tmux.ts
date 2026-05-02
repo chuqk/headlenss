@@ -115,6 +115,53 @@ export async function createSession(
     // `claude -c` で過去会話継続を試み、失敗した場合は通常起動にフォールバック。
     // shell の `||` で分岐するので、bash/zsh/fish の最近のバージョンで動く。
     await sendKeys(name, 'claude -c || claude', true);
+
+    // Claude Code 起動完了まで pane 内容を観察しながら trust prompt を捌く
+    await advanceClaudeStartup(name);
+  }
+}
+
+/**
+ * `claude` コマンド送出後の起動シーケンスを pane 内容ベースで進める。
+ *
+ * 1. 信頼されていない作業ディレクトリでは「Is this a project you trust?」確認画面が
+ *    表示される。ユーザの Enter を待っているため、確認画面を検出したら Enter を 1 回
+ *    送って default 選択 "Yes, I trust this folder" を確定する。
+ *    送らないと claude が完全起動せず ~/.claude/sessions/<PID>.json への self-register
+ *    も行われず、後段の検出 API が新セッションを拾えない。
+ * 2. claude main UI ("Welcome back" 等) を検出したら起動完了とみなし return。
+ * 3. 既に信頼済みのディレクトリでは trust prompt は出ず、直接 main UI に着くため
+ *    Enter は送らないまま return する。
+ *
+ * いずれの状態にも至らないまま timeout した場合はそのまま処理を抜ける (副作用なし)。
+ */
+async function advanceClaudeStartup(name: string, timeoutMs = 12000): Promise<void> {
+  const TRUST_PROMPT_RE = /Is this a project you|trust this folder/i;
+  const READY_RE        = /Welcome back|Tips for getting started|auto mode on/i;
+  const POLL_INTERVAL_MS = 250;
+
+  const deadline = Date.now() + timeoutMs;
+  let trustConfirmed = false;
+  while (Date.now() < deadline) {
+    let content = '';
+    try {
+      content = await captureOutput(name, 60);
+    } catch {
+      // セッションが消えた/エラー: 諦める
+      return;
+    }
+    // claude メインUIに到達済 → 完了
+    if (READY_RE.test(content)) return;
+    // trust prompt 表示中で未確定 → Enter で確定
+    if (!trustConfirmed && TRUST_PROMPT_RE.test(content)) {
+      try {
+        await sendKeys(name, '', true);
+        trustConfirmed = true;
+      } catch {
+        return;
+      }
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 }
 
