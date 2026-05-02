@@ -82,10 +82,10 @@ export async function showScreen(content: string, footer: string): Promise<void>
         width: DISPLAY_WIDTH,
         height: CONTENT_HEIGHT,
         isEventCapture: 0,
-        // border を出すと Flutter/LVGL 側がコンテナ縁を描いた上で
-        // スクロールが要求された時にも縁の中にスクロールバーを描画する。
-        // 視覚的に枠も不要なので border 系は省略。
         paddingLength: 4,
+        borderWidth: 1,
+        borderColor: 13,
+        borderRadius: 0,
       }),
       footerContainer(footer),
     ],
