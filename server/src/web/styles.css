@@ -206,4 +206,6 @@ button {
   background: #0e0e10;
   padding: 0.5rem;
   overflow: hidden;
+  /* スマホでブラウザのデフォルト touch スクロールを抑止して xterm.js 側に渡す */
+  touch-action: none;
 }

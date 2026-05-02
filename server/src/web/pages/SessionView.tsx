@@ -42,19 +42,70 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     // ホイールで履歴を遡っている間は新規出力で勝手に最下部に飛ばないようにする。
-    // xterm.js の baseY/viewportY は非同期更新で誤判定するため、ホイール操作だけを信頼。
+    // xterm.js の baseY/viewportY は非同期更新で誤判定するため、ホイール/タッチ操作だけを信頼。
     let userScrolledUp = false;
-    term.attachCustomWheelEventHandler((event) => {
-      if (event.deltaY < 0) {
+    const updateScrollFlag = (delta: number) => {
+      if (delta < 0) {
         userScrolledUp = true;
-      } else if (event.deltaY > 0) {
+      } else if (delta > 0) {
         requestAnimationFrame(() => {
           const buf = term.buffer.active;
           if (buf.viewportY >= buf.baseY) userScrolledUp = false;
         });
       }
+    };
+    term.attachCustomWheelEventHandler((event) => {
+      updateScrollFlag(event.deltaY);
       return true;
     });
+
+    // タッチ(スマホ)スクロール: 縦スワイプで履歴を遡れるようにする。
+    // xterm.js には built-in の touch scroll がないため自前で実装。
+    // touch-action: none を CSS で立てて、ブラウザのデフォルトスクロールを抑止。
+    let touchActiveId: number | null = null;
+    let lastTouchY = 0;
+    const FONT_PX = 13;
+    const LINE_HEIGHT_PX = Math.round(FONT_PX * 1.2); // 大体の行高さ
+    const onTouchStart = (e: TouchEvent) => {
+      if (touchActiveId !== null) return;
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      touchActiveId = t.identifier;
+      lastTouchY = t.clientY;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchActiveId === null) return;
+      let touch: Touch | null = null;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === touchActiveId) {
+          touch = e.touches[i];
+          break;
+        }
+      }
+      if (!touch) return;
+      const dy = lastTouchY - touch.clientY; // 上スワイプ(指を上へ) = dy>0 = 下方向(新しい行へ)
+      const lines = Math.trunc(dy / LINE_HEIGHT_PX);
+      if (lines !== 0) {
+        // 指を上に動かした (dy>0) → 下スクロール = scrollLines(+) = newer
+        // 指を下に動かした (dy<0) → 上スクロール = scrollLines(-) = older
+        term.scrollLines(lines);
+        lastTouchY -= lines * LINE_HEIGHT_PX;
+        updateScrollFlag(dy);
+        e.preventDefault();
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === touchActiveId) {
+          touchActiveId = null;
+          break;
+        }
+      }
+    };
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
     // Shift+Enter: bracketed paste で改行をペースト扱いに包んで送る (split-end と同じ)。
     //   Claude Code を含む多くの TUI 入力欄が DECSET 2004 を有効にしており、
@@ -177,6 +228,10 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener('resize', onWindowResize);
       ro.disconnect();
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('touchcancel', onTouchEnd);
       onDataDisp.dispose();
       onResizeDisp.dispose();
       ws?.close();
