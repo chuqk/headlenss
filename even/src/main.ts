@@ -1570,13 +1570,39 @@ async function submitNewClaudeSession(e: Event): Promise<void> {
       cwd: cwdRaw || undefined,
       startClaude: true,
     })
-    setNewClaudeStatus('ok', `${t('newClaudeOk')} (${name})`)
     log(`Started new Claude session: ${name} cwd=${cwdRaw || '(home)'}`)
+
+    // claude プロセスが ~/.claude/sessions/<PID>.json に登録されるまで時間がかかるので、
+    // listClaudeSessions に新セッションが現れるまで polling する。
+    // 起動成功 ≠ 即検出可能 なので、最大 ~12 秒まで 500ms 間隔でリトライ。
+    const startedAt = Date.now()
+    const POLL_TIMEOUT_MS = 12000
+    let appeared = false
+    setNewClaudeStatus('busy', `${t('newClaudeStarting')} (検出中…)`)
+    while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, 500))
+      await reloadClaudeSessions()
+      if (claudeSessions.some((s) => s.tmuxSessionName === name)) {
+        appeared = true
+        break
+      }
+    }
+
+    if (appeared) {
+      // 検出成功: rootlist のカーソルを新セッションに合わせて、レンズへ即反映
+      const idx = claudeSessions.findIndex((s) => s.tmuxSessionName === name)
+      if (idx >= 0) rootCursor = idx
+      setNewClaudeStatus('ok', `${t('newClaudeOk')} (${name})`)
+      log(`Claude session "${name}" detected (took ${Date.now() - startedAt}ms)`)
+    } else {
+      // tmux session 自体は作成済みだが Claude の registry 登録が遅れているケース。
+      // 一覧に出るのは遅延するが処理は成功扱いとする。
+      setNewClaudeStatus('ok', `${t('newClaudeOk')} (${name}) — Claude 検出待ち`)
+      log(`Claude session "${name}" not yet registered after ${POLL_TIMEOUT_MS}ms — keep polling in background`)
+    }
     newClaudeNameEl.value = ''
     newClaudeCwdEl.value = ''
-    // セッション一覧 / Claude セッション一覧を再取得して G2 にも反映
-    await reloadSessions()
-    await reloadClaudeSessions()
+    // 念押しで G2 レンズへ反映 (phase が rootlist でなくても次の遷移で乗る)
     if (phase === 'rootlist') void refreshG2(true)
   } catch (err) {
     setNewClaudeStatus('err', t('newClaudeFail') + (err as Error).message)
