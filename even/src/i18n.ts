@@ -85,12 +85,11 @@ const STRINGS = {
   // 共通記法: `Click:X ↑↓:Y ⊕⊕:Z` (⊕⊕ = double click)
   g2FootRoot:       { en: 'Click:Open ↑↓:Nav ⊕⊕:Exit',          ja: 'Click:開く ↑↓:移動 ⊕⊕:終了' },
   g2FootRecOff:     { en: 'Click: Stop',                         ja: 'Click: 停止' },
-  g2FootFinalizing: { en: 'Finalizing…',                         ja: '処理中…' },
-  g2FootPending:    { en: '↑:Send ↓:Erase ⊕⊕:Discard',          ja: '↑:送信 ↓:削除 ⊕⊕:破棄' },
-  g2FootSending:    { en: 'Sending…',                            ja: '送信中…' },
+  g2FootFinalizing: { en: 'Transcribing…',                       ja: '文字起こし中…' },
+  g2FootPending:    { en: '↑:Send ↓:Erase ⊕⊕:Back',             ja: '↑:送信 ↓:削除 ⊕⊕:戻る' },
+  g2FootSending:    { en: 'Sending to tmux…',                    ja: 'tmuxに送信中…' },
   g2FootSetup:      { en: 'Set up on phone',                     ja: 'スマホで設定' },
   g2FootIdle:       { en: 'Click:Rec ↑↓:Scroll ⊕⊕:Back',        ja: 'Click:録音 ↑↓:履歴 ⊕⊕:戻る' },
-  g2FootScrolled:   { en: '↑:older ↓:newer',                    ja: '↑:過去 ↓:新しい' },
   g2FootCcResponse: { en: '↑↓:Pick Click:OK ⊕⊕:Cancel',          ja: '↑↓:選択 Click:確定 ⊕⊕:取消' },
   g2NoOutput:       { en: '(no output yet)',                    ja: '(まだ出力なし)' },
 } as const

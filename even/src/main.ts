@@ -502,7 +502,8 @@ function buildG2Footer(): string {
     case 'sending':       return t('g2FootSending')
     case 'unconfigured':  return t('g2FootSetup')
     case 'idle':
-      if (isScrolled()) return `${t('g2FootScrolled')} (back ${scrollOffset})`
+      // スクロール中も通常と同じ表記。戻り行数だけ末尾に付加する
+      if (isScrolled()) return `${t('g2FootIdle')}  (-${scrollOffset})`
       return t('g2FootIdle')
     default: return ''
   }
