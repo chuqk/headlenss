@@ -494,16 +494,15 @@ function buildG2Footer(): string {
   switch (phase) {
     case 'rootlist':
       if (claudeSessions.length === 0) return t('g2NoSessionsBrief')
-      return `${t('g2FootRoot')}  (${rootCursor + 1}/${claudeSessions.length})`
-    case 'cc-response':
-      return getLanguage() === 'en' ? '↑↓ Choose  Click: OK' : '↑↓ 選択  Click: 確定'
-    case 'recording': return t('g2FootRecOff')
-    case 'finalizing': return t('g2FootFinalizing')
-    case 'pending': return t('g2FootPending')
-    case 'sending': return t('g2FootSending')
-    case 'unconfigured': return t('g2FootSetup')
+      return `${t('g2FootRoot')} (${rootCursor + 1}/${claudeSessions.length})`
+    case 'cc-response':   return t('g2FootCcResponse')
+    case 'recording':     return t('g2FootRecOff')
+    case 'finalizing':    return t('g2FootFinalizing')
+    case 'pending':       return t('g2FootPending')
+    case 'sending':       return t('g2FootSending')
+    case 'unconfigured':  return t('g2FootSetup')
     case 'idle':
-      if (isScrolled()) return `${t('g2FootScrolled')}  (back ${scrollOffset})`
+      if (isScrolled()) return `${t('g2FootScrolled')} (back ${scrollOffset})`
       return t('g2FootIdle')
     default: return ''
   }
