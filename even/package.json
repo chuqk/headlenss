@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "qr": "evenhub qr --http --port 5177",
-    "pack": "npm run build && evenhub pack app.json dist -o headlenss.ehpk",
+    "pack": "npm run build && node -e \"const v=require('./app.json').version;require('child_process').execSync('evenhub pack app.json dist -o headlenss-'+v+'.ehpk',{stdio:'inherit'})\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

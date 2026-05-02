@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { WebSocketServer } from 'ws';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { captureOutput, createSession, killSession, listSessions, sendKeys } from './tmux.ts';
@@ -91,14 +91,53 @@ app.post('/api/sessions/:name/input', async (c) => {
 app.route('/api', claudeRouter);
 
 // .ehpk ダウンロード (G2 アプリ install 用)
-const EHPK_PATH = resolve(__dirname, '../../../even/headlenss.ehpk');
-app.get('/download/ehpk', (c) => {
-  if (!existsSync(EHPK_PATH)) {
-    return c.json({ error: 'headlenss.ehpk not built. run: cd even && npm run pack' }, 404);
+const EVEN_DIR = resolve(__dirname, '../../../even');
+
+/** even/ 配下から最新の headlenss[-x.y.z].ehpk を見つける (バージョンの semver 降順、なければ mtime 降順) */
+function findLatestEhpk(): { name: string; path: string } | null {
+  const candidates: Array<{ name: string; path: string; version: string | null; mtime: number }> = [];
+  try {
+    for (const f of readdirSync(EVEN_DIR)) {
+      if (!/^headlenss(-[\d.]+)?\.ehpk$/i.test(f)) continue;
+      const path = resolve(EVEN_DIR, f);
+      const m = f.match(/^headlenss-([\d.]+)\.ehpk$/i);
+      const version = m ? m[1] : null;
+      candidates.push({ name: f, path, version, mtime: statSync(path).mtimeMs });
+    }
+  } catch {
+    return null;
   }
-  const buf = readFileSync(EHPK_PATH);
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    if (a.version && b.version) return cmpSemver(b.version, a.version);
+    if (a.version) return -1;
+    if (b.version) return 1;
+    return b.mtime - a.mtime;
+  });
+  const top = candidates[0];
+  return { name: top.name, path: top.path };
+}
+
+function cmpSemver(a: string, b: string): number {
+  const pa = a.split('.').map((n) => Number(n) || 0);
+  const pb = b.split('.').map((n) => Number(n) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const da = pa[i] ?? 0;
+    const db = pb[i] ?? 0;
+    if (da !== db) return da - db;
+  }
+  return 0;
+}
+
+app.get('/download/ehpk', (c) => {
+  const latest = findLatestEhpk();
+  if (!latest) {
+    return c.json({ error: 'no .ehpk found in even/. run: cd even && npm run pack' }, 404);
+  }
+  const buf = readFileSync(latest.path);
   c.header('Content-Type', 'application/octet-stream');
-  c.header('Content-Disposition', 'attachment; filename="headlenss.ehpk"');
+  c.header('Content-Disposition', `attachment; filename="${latest.name}"`);
   c.header('Content-Length', String(buf.byteLength));
   return c.body(new Uint8Array(buf));
 });
