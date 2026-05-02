@@ -64,8 +64,9 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     // touch-action: none を CSS で立てて、ブラウザのデフォルトスクロールを抑止。
     let touchActiveId: number | null = null;
     let lastTouchY = 0;
-    const FONT_PX = 13;
-    const LINE_HEIGHT_PX = Math.round(FONT_PX * 1.2); // 大体の行高さ
+    // スワイプ量を行数に変換するスケール (小さいほど高速スクロール)。
+    // 行高さそのままだと指を 200px 動かしても 12 行しか進まないので半分にして倍速。
+    const PX_PER_LINE = 8;
     const onTouchStart = (e: TouchEvent) => {
       if (touchActiveId !== null) return;
       if (e.touches.length !== 1) return;
@@ -84,12 +85,12 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       }
       if (!touch) return;
       const dy = lastTouchY - touch.clientY; // 上スワイプ(指を上へ) = dy>0 = 下方向(新しい行へ)
-      const lines = Math.trunc(dy / LINE_HEIGHT_PX);
+      const lines = Math.trunc(dy / PX_PER_LINE);
       if (lines !== 0) {
         // 指を上に動かした (dy>0) → 下スクロール = scrollLines(+) = newer
         // 指を下に動かした (dy<0) → 上スクロール = scrollLines(-) = older
         term.scrollLines(lines);
-        lastTouchY -= lines * LINE_HEIGHT_PX;
+        lastTouchY -= lines * PX_PER_LINE;
         updateScrollFlag(dy);
         e.preventDefault();
       }
@@ -223,10 +224,33 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     const ro = new ResizeObserver(() => fitAndPushSize());
     ro.observe(container);
 
+    // モバイルで onscreen keyboard が出るとビューポートが縮む。
+    // visualViewport.height をページ高さに反映してターミナルをキーボードの上に収める。
+    // キーボードが出たら自動で末尾(カーソル位置)にスクロールして入力欄が見えるようにする。
+    const pageEl = container.closest('.page-session') as HTMLElement | null;
+    let lastViewportH = window.visualViewport?.height ?? window.innerHeight;
+    const applyVisualViewportHeight = () => {
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      if (pageEl) pageEl.style.height = `${h}px`;
+      // ビューポートが縮んだ(=キーボード出現)タイミングで末尾へジャンプ
+      if (h < lastViewportH - 80) {
+        userScrolledUp = false;
+        term.scrollToBottom();
+      }
+      lastViewportH = h;
+      fitAndPushSize();
+    };
+    applyVisualViewportHeight();
+    window.visualViewport?.addEventListener('resize', applyVisualViewportHeight);
+    window.visualViewport?.addEventListener('scroll', applyVisualViewportHeight);
+
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener('resize', onWindowResize);
+      window.visualViewport?.removeEventListener('resize', applyVisualViewportHeight);
+      window.visualViewport?.removeEventListener('scroll', applyVisualViewportHeight);
+      if (pageEl) pageEl.style.height = '';
       ro.disconnect();
       container.removeEventListener('touchstart', onTouchStart);
       container.removeEventListener('touchmove', onTouchMove);
