@@ -25,17 +25,40 @@ body[data-view="dashboard"] #pendingSection,
 body[data-view="dashboard"] .tmux-mirror,
 body[data-view="dashboard"] .history,
 body[data-view="dashboard"] .manual-record,
-body[data-view="dashboard"] details.card:not(#settingsDetails) {
+body[data-view="dashboard"] details.card:not(#settingsDetails):not(#claudeSessionsCard) {
   display: none !important;
 }
 
-/* Claude セッション一覧 (WebView 用) */
-.claude-sessions {
+/* Claude セッション一覧 (WebView 用)。details で畳めるメニュー化 */
+.claude-sessions-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 0;
   margin-bottom: 12px;
+}
+.claude-sessions-card > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 14px;
+  font-weight: 500;
+  user-select: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.claude-sessions-card > summary::-webkit-details-marker { display: none; }
+.claude-sessions-card[open] > summary { border-bottom: 1px solid var(--border); }
+.claude-count {
+  font-weight: 400;
+}
+.claude-sessions-body {
+  padding: 8px 14px 12px;
+}
+.claude-sessions-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
 }
 .claude-list {
   list-style: none;

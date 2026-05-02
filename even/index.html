@@ -133,15 +133,6 @@
         </ol>
       </section>
 
-      <!-- 既存 Claude セッション一覧 (G2 rootlist と同じデータを WebView でも見せる) -->
-      <section class="claude-sessions" id="claudeSessionsCard">
-        <header class="section-head">
-          <h2 data-i18n="claudeSessionsHead">Claude セッション</h2>
-          <button id="reloadClaudeBtn" class="link-btn" type="button" data-i18n="refresh">refresh</button>
-        </header>
-        <ul id="claudeSessionsList" class="claude-list"></ul>
-      </section>
-
       <!-- 新規 Claude セッション (WebView から tmux + claude code を起動) -->
       <section class="new-claude-session card" id="newClaudeSessionCard">
         <header class="section-head">
@@ -165,6 +156,21 @@
         </form>
         <div id="newClaudeStatus" class="probe small muted"></div>
       </section>
+
+      <!-- 既存 Claude セッション一覧 (G2 rootlist と同じデータを WebView でも見せる)。
+           普段は畳んでおき、必要なときだけ開く -->
+      <details class="claude-sessions-card card" id="claudeSessionsCard">
+        <summary>
+          <span data-i18n="claudeSessionsHead">Claude セッション</span>
+          <span id="claudeSessionsCount" class="claude-count muted small"></span>
+        </summary>
+        <div class="claude-sessions-body">
+          <div class="claude-sessions-toolbar">
+            <button id="reloadClaudeBtn" class="link-btn" type="button" data-i18n="refresh">refresh</button>
+          </div>
+          <ul id="claudeSessionsList" class="claude-list"></ul>
+        </div>
+      </details>
 
       <!-- 設定 (WebView 上は実質これだけが表示される唯一の主要要素なのでデフォルトで開く) -->
       <details id="settingsDetails" class="card" open>

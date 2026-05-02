@@ -1567,6 +1567,9 @@ function claudeStatusLabel(status: string): string {
 
 function renderClaudeSessionsList(): void {
   if (!claudeSessionsListEl) return
+  // summary に件数バッジ
+  const countEl = document.getElementById('claudeSessionsCount')
+  if (countEl) countEl.textContent = serverProbeOk ? `(${claudeSessions.length})` : ''
   if (!serverProbeOk) {
     claudeSessionsListEl.innerHTML = `<li class="claude-empty">${escapeHtml(serverErrorMsg || '(server not reachable)')}</li>`
     return
