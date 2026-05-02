@@ -116,7 +116,10 @@ type Phase =
   | 'error'
 
 const TMUX_OUTPUT_LINES = 200          // (legacy) capture-pane 用 — 現状未使用
-const CHAT_DISPLAY_LINES = 8           // G2レンズに出す chat 行数 (288pxに収まる量)
+// G2 レンズの content area は 248px。LVGL のフォント行高に対して 8 行流すと
+// 容量を超えて自動的にスクロールバーが描画されてしまう。SDK には scrollbar
+// 抑止のフィールドが無いため、行数を絞ってコンテナ内に収める方針を採る。
+const CHAT_DISPLAY_LINES = 6           // G2レンズに出す chat 行数 (scrollbar 抑止のため余裕を持たせる)
 const CHAT_WRAP_WIDTH = 44             // チャット行を word-wrap する幅 (even-toolkit 流)
 const CC_POLL_INTERVAL_MS = 1500       // Claude sessions / chat / pending のポーリング間隔
 const ROOT_LIST_VISIBLE = 8            // G2 root 画面に同時表示するセッション数
