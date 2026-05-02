@@ -1023,51 +1023,72 @@ async function startRecording(): Promise<void> {
   durationEl.textContent = '0.0s'
   resetScroll()
 
-  // 1. Speechmatics RT 接続 (JWT発行 → WebSocket接続 → StartRecognition)
-  rtSession = new SpeechmaticsRT()
-  try {
-    await rtSession.start({
-      apiKey: settings.speechmaticsApiKey,
-      language: settings.speechmaticsLang,
-      operatingPoint: settings.speechmaticsOperatingPoint,
-      onPartial: (text) => {
-        liveTranscript = text
-        void refreshG2()
-      },
-      onFinal: (text) => {
-        liveTranscript = text
-        void refreshG2()
-      },
-      onError: (err) => log(`RT error: ${err.message}`),
-    })
-    log('Speechmatics RT connected')
-  } catch (err) {
-    log(`RT connect failed: ${(err as Error).message}`)
-    rtSession = null
-    return
-  }
-
-  // 2. G2マイク開始
-  try {
-    const ok = await bridge.audioControl(true)
-    if (ok === false) {
-      log('audioControl(true) returned false')
-      rtSession.abort()
-      rtSession = null
-      return
-    }
-  } catch (err) {
-    log(`audioControl error: ${err}`)
-    rtSession?.abort()
-    rtSession = null
-    return
-  }
-
+  // 1. UI を即座に recording 画面へ遷移 (体感ラグを減らす)
   phase = 'recording'
   startRecordingTimer()
   paintStatus()
   updateRecordButton()
   void refreshG2(true)
+
+  // 2. Speechmatics RT 接続 + マイク起動 を非同期で進める。
+  //    途中でユーザが停止した場合に二重起動を防ぐため、session 同一性で gard する。
+  const localBridge = bridge
+  const session = new SpeechmaticsRT()
+  rtSession = session
+
+  const revertToIdle = () => {
+    if (rtSession === session && phase === 'recording') {
+      stopRecordingTimer()
+      try { session.abort() } catch { /* ignore */ }
+      rtSession = null
+      phase = 'idle'
+      paintStatus()
+      updateRecordButton()
+      void refreshG2(true)
+    }
+  }
+
+  void (async () => {
+    try {
+      await session.start({
+        apiKey: settings.speechmaticsApiKey,
+        language: settings.speechmaticsLang,
+        operatingPoint: settings.speechmaticsOperatingPoint,
+        onPartial: (text) => {
+          liveTranscript = text
+          void refreshG2()
+        },
+        onFinal: (text) => {
+          liveTranscript = text
+          void refreshG2()
+        },
+        onError: (err) => log(`RT error: ${err.message}`),
+      })
+      log('Speechmatics RT connected')
+    } catch (err) {
+      log(`RT connect failed: ${(err as Error).message}`)
+      revertToIdle()
+      return
+    }
+
+    // 接続完了するまでにユーザが停止していたら、ここで打ち切り
+    if (rtSession !== session || phase !== 'recording') {
+      try { session.abort() } catch { /* ignore */ }
+      return
+    }
+
+    // 3. G2マイク開始
+    try {
+      const ok = await localBridge.audioControl(true)
+      if (ok === false) {
+        log('audioControl(true) returned false')
+        revertToIdle()
+      }
+    } catch (err) {
+      log(`audioControl error: ${err}`)
+      revertToIdle()
+    }
+  })()
 }
 
 /** 録音停止 → ASR 確定 → pending 状態へ。送信はしない (ユーザの↑/↓判断待ち) */
