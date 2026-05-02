@@ -11,6 +11,7 @@ import { handlePtyConnection } from './pty.ts';
 import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './asr/index.ts';
 import { claudeRouter } from './claude/router.ts';
 import { detectClaudeSessions } from './claude/process-detect.ts';
+import * as claudeStore from './claude/store.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = resolve(__dirname, '../../dist/web');
@@ -52,8 +53,12 @@ app.post('/api/sessions', async (c) => {
 });
 
 app.delete('/api/sessions/:name', async (c) => {
+  const name = c.req.param('name');
   try {
-    await killSession(c.req.param('name'));
+    await killSession(name);
+    // hook 経由で記録された Claude セッションエントリも合わせて削除する。
+    // これをやらないと /api/claude/sessions に死んだ tmux セッションが残り続ける。
+    claudeStore.removeSession(name);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);

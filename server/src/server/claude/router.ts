@@ -1,13 +1,33 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve as pathResolve } from 'node:path';
+import { promisify } from 'node:util';
 import { detectClaudeSessions } from './process-detect.ts';
 import * as store from './store.ts';
 import { resolveTmuxSessionName } from './tmux-resolver.ts';
 import { extractChatFromTranscript, extractLastAssistantText } from './transcript.ts';
 import type { AskQuestion, HookDecision, RespondInput, SessionStatus } from './types.ts';
+
+const exec = promisify(execFile);
+
+/** 現在 tmux server 上に存在しているセッション名集合を返す */
+async function liveTmuxSessionNames(): Promise<Set<string>> {
+  try {
+    const { stdout } = await exec('tmux', ['list-sessions', '-F', '#{session_name}']);
+    return new Set(stdout.trim().split('\n').filter(Boolean));
+  } catch (err) {
+    const stderr = (err as { stderr?: string }).stderr ?? '';
+    // tmux server が居ない = セッション無し
+    if (stderr.includes('no server running') || stderr.includes('error connecting')) {
+      return new Set();
+    }
+    // それ以外のエラーは安全側として空集合扱いはせず投げる
+    throw err;
+  }
+}
 
 /** cwd と sessionId から transcript ファイルのパスを推定する */
 function transcriptPathFor(cwd: string, sessionId: string): string {
@@ -186,7 +206,27 @@ claudeRouter.post('/hooks/permission-request', async (c) => {
 claudeRouter.get('/claude/sessions', async (c) => {
   // hook 経由で記録されているセッション (チャット履歴あり)
   const tracked = store.listSessions();
-  const trackedNames = new Set(tracked.map((s) => s.tmuxSessionName));
+
+  // 現在生きている tmux セッションを取得し、tracked のうち既に消滅したものは
+  // store からも消す (DELETE API 以外の経路で kill された場合への保険)。
+  // tmux 側の取得に失敗した場合は cleanup 自体をスキップして既存挙動を維持する。
+  let liveTmux: Set<string> | null = null;
+  try {
+    liveTmux = await liveTmuxSessionNames();
+  } catch {
+    liveTmux = null;
+  }
+  if (liveTmux) {
+    for (const s of tracked) {
+      if (!liveTmux.has(s.tmuxSessionName)) {
+        store.removeSession(s.tmuxSessionName);
+      }
+    }
+  }
+
+  // 掃除後の tracked 一覧を取り直す
+  const trackedAlive = liveTmux ? store.listSessions() : tracked;
+  const trackedNames = new Set(trackedAlive.map((s) => s.tmuxSessionName));
 
   // ~/.claude/sessions/ レジストリから検出 (プラグインなしでも検出可)
   const detected = await detectClaudeSessions();
@@ -199,7 +239,7 @@ claudeRouter.get('/claude/sessions', async (c) => {
     lastSeenAt: number;
   }> = [];
 
-  for (const s of tracked) {
+  for (const s of trackedAlive) {
     merged.push({
       tmuxSessionName: s.tmuxSessionName,
       cwd: s.cwd,
@@ -211,6 +251,9 @@ claudeRouter.get('/claude/sessions', async (c) => {
 
   for (const d of detected) {
     if (trackedNames.has(d.tmuxSessionName)) continue;
+    // detect 側にも tmux 居るかフィルタ (process-detect は tmux pane 紐付け済なので
+    // 通常はOKだが、念のため)
+    if (liveTmux && !liveTmux.has(d.tmuxSessionName)) continue;
     merged.push({
       tmuxSessionName: d.tmuxSessionName,
       cwd: d.cwd,
