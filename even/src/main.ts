@@ -601,14 +601,15 @@ async function reloadClaudeSessions(): Promise<void> {
   if (!serverProbeOk) return
   try {
     const next = await client.listClaudeSessions()
+    const changed =
+      next.length !== claudeSessions.length ||
+      next.some((s, i) => s.tmuxSessionName !== claudeSessions[i]?.tmuxSessionName || s.status !== claudeSessions[i]?.status)
     claudeSessions = next
-    // 現在選択中のセッション名がリストに無くなったら最初のものに切り替え (任意)
-    if (claudeSessions.length > 0 && !claudeSessions.some((s) => s.tmuxSessionName === settings.sessionName)) {
-      // ユーザに勝手に切り替えるのは控えめに: 設定を変えず、rootCursor だけ動かす
-    }
     if (rootCursor >= claudeSessions.length) {
       rootCursor = Math.max(0, claudeSessions.length - 1)
     }
+    // rootlist を見ている間は中身が変わったら即レンズ再描画
+    if (changed && phase === 'rootlist') void refreshG2(true)
   } catch (e) {
     log(`listClaudeSessions error: ${(e as Error).message}`)
   }
@@ -1489,8 +1490,15 @@ async function boot(): Promise<void> {
   // tmux 出力ポーリング (idle時のみ実行)
   startOutputPolling()
   if (serverProbeOk) {
+    // 起動直後にレンズが空表示になるのを避けるため、ポーリング待たずに即フェッチ
     void reloadClaudeSessions()
     void refreshClaudeData()
+    // 念のため数百ms後にもう一度叩く (Claude Code 側の registry 書き込みタイミング次第で
+    // 1回目で見えないケースがあるため)
+    setTimeout(() => {
+      if (!serverProbeOk) return
+      void reloadClaudeSessions()
+    }, 500)
   }
 }
 
