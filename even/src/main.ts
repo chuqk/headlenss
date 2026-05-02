@@ -1247,7 +1247,12 @@ async function toggleRecording(): Promise<void> {
   if (phase === 'recording') {
     await stopRecordingToPending()
   } else if (phase === 'pending') {
-    // 録音中じゃないクリックは何もしない (誤操作防止)
+    // テキストが消されている (下スクロールで削除直後) ならクリックで再録音
+    if (!pendingText.trim() && !liveTranscript.trim()) {
+      await startRecording()
+      return
+    }
+    // 確定テキストがある状態のクリックは誤操作防止のため無視
     return
   } else if (phase === 'rootlist') {
     openSelectedFromRoot()
