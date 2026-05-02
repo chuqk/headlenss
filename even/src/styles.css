@@ -16,9 +16,9 @@
 
 * { box-sizing: border-box; }
 
-/* WebView は最小UI: 設定以外のダッシュボード要素は隠す。
-   主用途は G2 経由で、スマホ画面はセットアップ確認/言語切替/設定編集のためだけに使う。
-   要素自体は残してJS連携を保ち、CSSで非表示にするだけ。 */
+/* WebView は最小UI: 設定 / 新規 Claude セッション 以外のダッシュボード要素は隠す。
+   主用途は G2 経由で、スマホ画面はセットアップ確認/言語切替/設定編集と新規プロジェクト
+   起動のためだけに使う。要素自体は残してJS連携を保ち、CSSで非表示にするだけ。 */
 body[data-view="dashboard"] .status-bar,
 body[data-view="dashboard"] .sessions,
 body[data-view="dashboard"] #pendingSection,
@@ -28,6 +28,35 @@ body[data-view="dashboard"] .manual-record,
 body[data-view="dashboard"] details.card:not(#settingsDetails) {
   display: none !important;
 }
+
+/* 新規 Claude セッション フォーム */
+.new-claude-session {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.claude-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.claude-form button[type="submit"] {
+  align-self: flex-start;
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.claude-form button[type="submit"]:hover { filter: brightness(1.1); }
+.claude-form button[type="submit"]:disabled { opacity: 0.5; cursor: default; }
+#newClaudeStatus { margin-top: 8px; min-height: 1.2em; }
 
 /* 左上固定の言語セレクタと設定カードの被りを避けるための余白 */
 body[data-view="dashboard"] #app {

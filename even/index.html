@@ -133,6 +133,30 @@
         </ol>
       </section>
 
+      <!-- 新規 Claude セッション (WebView から tmux + claude code を起動) -->
+      <section class="new-claude-session card" id="newClaudeSessionCard">
+        <header class="section-head">
+          <h2 data-i18n="newClaudeHead">新規 Claude セッション</h2>
+        </header>
+        <form id="newClaudeSessionForm" class="claude-form">
+          <label class="row">
+            <span data-i18n="newClaudeName">セッション名</span>
+            <input id="newClaudeName" type="text"
+                   pattern="[a-zA-Z0-9_\-]+" maxlength="40"
+                   placeholder="myproject"
+                   autocapitalize="off" autocorrect="off" spellcheck="false" required />
+          </label>
+          <label class="row">
+            <span data-i18n="newClaudeCwd">作業ディレクトリ</span>
+            <input id="newClaudeCwd" type="text"
+                   placeholder="~/works/myproject"
+                   autocapitalize="off" autocorrect="off" spellcheck="false" />
+          </label>
+          <button type="submit" class="primary" data-i18n="newClaudeStart">Claude を起動</button>
+        </form>
+        <div id="newClaudeStatus" class="probe small muted"></div>
+      </section>
+
       <!-- 設定 (WebView 上は実質これだけが表示される唯一の主要要素なのでデフォルトで開く) -->
       <details id="settingsDetails" class="card" open>
         <summary data-i18n="settingsTitle">⚙ Settings</summary>

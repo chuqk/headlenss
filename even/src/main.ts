@@ -99,6 +99,12 @@ const discardBtn = document.getElementById('discardBtn') as HTMLButtonElement
 const tmuxOutputEl = document.getElementById('tmuxOutput') as HTMLPreElement
 const reloadOutputBtn = document.getElementById('reloadOutputBtn') as HTMLButtonElement
 
+// 新規 Claude セッション
+const newClaudeForm = document.getElementById('newClaudeSessionForm') as HTMLFormElement
+const newClaudeNameEl = document.getElementById('newClaudeName') as HTMLInputElement
+const newClaudeCwdEl = document.getElementById('newClaudeCwd') as HTMLInputElement
+const newClaudeStatusEl = document.getElementById('newClaudeStatus') as HTMLDivElement
+
 const recordBtn = document.getElementById('recordBtn') as HTMLButtonElement
 const durationEl = document.getElementById('duration') as HTMLSpanElement
 
@@ -1538,6 +1544,47 @@ function showToast(text: string, ms = 2500): void {
   }, ms)
 }
 
+// ─── 新規 Claude セッション ────────────────────────────────────────────
+function setNewClaudeStatus(kind: 'ok' | 'err' | 'busy' | 'muted', text: string): void {
+  newClaudeStatusEl.className = `probe small ${kind === 'muted' ? 'muted' : kind}`
+  newClaudeStatusEl.textContent = text
+}
+
+async function submitNewClaudeSession(e: Event): Promise<void> {
+  e.preventDefault()
+  if (!serverProbeOk) {
+    setNewClaudeStatus('err', t('g2Unreachable'))
+    return
+  }
+  const name = newClaudeNameEl.value.trim()
+  const cwdRaw = newClaudeCwdEl.value.trim()
+  if (!name) {
+    setNewClaudeStatus('err', t('newClaudeNeedName'))
+    return
+  }
+  const submitBtn = newClaudeForm.querySelector<HTMLButtonElement>('button[type="submit"]')
+  if (submitBtn) submitBtn.disabled = true
+  setNewClaudeStatus('busy', t('newClaudeStarting'))
+  try {
+    await client.createSession(name, {
+      cwd: cwdRaw || undefined,
+      startClaude: true,
+    })
+    setNewClaudeStatus('ok', `${t('newClaudeOk')} (${name})`)
+    log(`Started new Claude session: ${name} cwd=${cwdRaw || '(home)'}`)
+    newClaudeNameEl.value = ''
+    newClaudeCwdEl.value = ''
+    // セッション一覧 / Claude セッション一覧を再取得して G2 にも反映
+    await reloadSessions()
+    await reloadClaudeSessions()
+    if (phase === 'rootlist') void refreshG2(true)
+  } catch (err) {
+    setNewClaudeStatus('err', t('newClaudeFail') + (err as Error).message)
+  } finally {
+    if (submitBtn) submitBtn.disabled = false
+  }
+}
+
 /**
  * 外部ブラウザを開きたいリンク (Speechmatics portal 等) のハンドラ。
  * Even Realities WebView が target="_blank" を外部ブラウザへ転送するかは未確認。
@@ -1643,6 +1690,7 @@ async function boot(): Promise<void> {
   setupLogToolbar()
   setupLanguageSelector()
   setupExternalLink(obSmPortalLink)
+  newClaudeForm.addEventListener('submit', (e) => { void submitNewClaudeSession(e) })
 
   // 1. Bridge 接続 (必須)
   try {

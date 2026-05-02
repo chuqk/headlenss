@@ -1,7 +1,18 @@
 import { execFile } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
+
+/** `~/...` や相対パスをホーム基準で絶対パスに解決 */
+function resolveCwd(input: string): string {
+  const home = process.env.HOME ?? '/';
+  if (input === '~') return home;
+  if (input.startsWith('~/')) return path.join(home, input.slice(2));
+  if (path.isAbsolute(input)) return input;
+  return path.join(home, input);
+}
 
 export type Session = {
   name: string;
@@ -69,11 +80,42 @@ export async function configureSessionForHeadless(name: string): Promise<void> {
   try { await exec('tmux', ['set', '-t', name, 'status', 'off']); } catch { /* ignore */ }
 }
 
-export async function createSession(name: string): Promise<void> {
+export type CreateSessionOptions = {
+  /** セッション開始時の作業ディレクトリ。`~`、`~/...`、相対パスはホーム基準で展開。
+   *  ディレクトリが存在しなければ mkdir -p で作成する。 */
+  cwd?: string;
+  /** true なら新規シェル上で `claude -c || claude` を実行する (claude code 起動)。
+   *  `claude -c` は過去会話の継続。失敗時 (該当会話無し等) は通常 `claude` にフォールバック。 */
+  startClaude?: boolean;
+};
+
+export async function createSession(
+  name: string,
+  options: CreateSessionOptions = {},
+): Promise<void> {
   validateName(name);
   const home = process.env.HOME ?? '/';
-  await exec('tmux', ['new-session', '-d', '-c', home, '-s', name], { cwd: home });
+  const targetCwd = options.cwd ? resolveCwd(options.cwd) : home;
+
+  // cwd が指定されていれば作成 (存在すれば no-op、recursive: true なので親ごと作る)
+  if (options.cwd) {
+    try {
+      await mkdir(targetCwd, { recursive: true });
+    } catch (e) {
+      throw new Error(`failed to create cwd "${targetCwd}": ${(e as Error).message}`);
+    }
+  }
+
+  await exec('tmux', ['new-session', '-d', '-c', targetCwd, '-s', name], { cwd: targetCwd });
   await configureSessionForHeadless(name);
+
+  if (options.startClaude) {
+    // 新セッションのシェルがプロンプト準備完了するまで少し待つ
+    await new Promise((r) => setTimeout(r, 300));
+    // `claude -c` で過去会話継続を試み、失敗した場合は通常起動にフォールバック。
+    // shell の `||` で分岐するので、bash/zsh/fish の最近のバージョンで動く。
+    await sendKeys(name, 'claude -c || claude', true);
+  }
 }
 
 /** セッションが無ければ作る (新規作成時は headless 用に設定する) */

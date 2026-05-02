@@ -93,11 +93,20 @@ export class HeadlenssClient {
     }
   }
 
-  async createSession(name: string): Promise<void> {
+  /**
+   * tmux セッションを作成。
+   * @param name セッション名
+   * @param opts.cwd 作業ディレクトリ (~/foo, /abs/path, または相対パス → home基準)。存在しなければ mkdir -p
+   * @param opts.startClaude true で `claude -c || claude` を初期コマンドとして流す
+   */
+  async createSession(
+    name: string,
+    opts?: { cwd?: string; startClaude?: boolean },
+  ): Promise<void> {
     const res = await fetch(this.url('/api/sessions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, cwd: opts?.cwd, startClaude: opts?.startClaude === true }),
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')

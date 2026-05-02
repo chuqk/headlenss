@@ -29,6 +29,16 @@ const STRINGS = {
   // ─── Top bar ─────────────────────────────────────────────────
   sessionLabel:   { en: '→ session',                            ja: '→ session' },
 
+  // ─── New Claude Session ──────────────────────────────────────
+  newClaudeHead:  { en: 'New Claude session',                   ja: '新規 Claude セッション' },
+  newClaudeName:  { en: 'Session name',                         ja: 'セッション名' },
+  newClaudeCwd:   { en: 'Working directory',                    ja: '作業ディレクトリ' },
+  newClaudeStart: { en: 'Start Claude',                         ja: 'Claude を起動' },
+  newClaudeNeedName: { en: 'Session name is required.',         ja: 'セッション名を入力してください。' },
+  newClaudeStarting: { en: 'Starting…',                         ja: '起動中…' },
+  newClaudeOk:    { en: 'Started ✓',                            ja: '起動しました ✓' },
+  newClaudeFail:  { en: 'Failed: ',                             ja: '失敗: ' },
+
   // ─── Sections ────────────────────────────────────────────────
   sessionsHead:   { en: 'Sessions',                             ja: 'Sessions' },
   refresh:        { en: 'refresh',                              ja: 'refresh' },

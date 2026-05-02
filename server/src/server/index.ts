@@ -38,10 +38,13 @@ app.get('/api/sessions', async (c) => {
 });
 
 app.post('/api/sessions', async (c) => {
-  const body = await c.req.json<{ name?: string }>();
+  const body = await c.req.json<{ name?: string; cwd?: string; startClaude?: boolean }>();
   if (!body.name) return c.json({ error: 'name is required' }, 400);
   try {
-    await createSession(body.name);
+    await createSession(body.name, {
+      cwd: typeof body.cwd === 'string' && body.cwd.trim() ? body.cwd.trim() : undefined,
+      startClaude: body.startClaude === true,
+    });
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
