@@ -1,6 +1,6 @@
 {
   "name": "headlenss",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Surface Claude Code activity (user prompts, replies, approvals, questions) to Even G2 smart glasses via the headlenss server.",
   "author": {
     "name": "takashicompany"
