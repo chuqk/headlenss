@@ -90,6 +90,19 @@ app.post('/api/sessions/:name/input', async (c) => {
 
 app.route('/api', claudeRouter);
 
+// .ehpk ダウンロード (G2 アプリ install 用)
+const EHPK_PATH = resolve(__dirname, '../../../even/headlenss.ehpk');
+app.get('/download/ehpk', (c) => {
+  if (!existsSync(EHPK_PATH)) {
+    return c.json({ error: 'headlenss.ehpk not built. run: cd even && npm run pack' }, 404);
+  }
+  const buf = readFileSync(EHPK_PATH);
+  c.header('Content-Type', 'application/octet-stream');
+  c.header('Content-Disposition', 'attachment; filename="headlenss.ehpk"');
+  c.header('Content-Length', String(buf.byteLength));
+  return c.body(new Uint8Array(buf));
+});
+
 app.get('/api/asr/status', (c) => c.json({ backend: getBackendName(), ...isAsrReady() }));
 
 app.post('/api/asr', async (c) => {
