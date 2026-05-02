@@ -30,6 +30,61 @@ body {
   padding: 12px 14px env(safe-area-inset-bottom, 12px);
 }
 
+/* ─── External link card (Speechmatics portal等) ─── */
+.external-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin: 10px 0 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  transition: background 0.12s;
+}
+.external-link:hover { background: #2a2a32; border-color: #3a3a44; }
+.external-link:active { transform: scale(0.99); }
+.external-link-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #93b8ff;
+}
+.external-link-url {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+
+/* ─── Toast (bottom center, fade in/out) ─── */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 24, 0.95);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+  z-index: 200;
+  font-size: 0.88rem;
+  max-width: calc(100vw - 48px);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.toast[hidden] { display: none; }
+.toast.visible { opacity: 1; }
+
 /* ─── Language selector (top-left fixed) ─── */
 .lang-selector {
   position: fixed;

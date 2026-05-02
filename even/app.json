@@ -16,7 +16,13 @@
     {
       "name": "network",
       "desc": "Talk to Speechmatics ASR and the headlenss server",
-      "whitelist": []
+      "whitelist": [
+        "https://portal.speechmatics.com",
+        "https://asr.api.speechmatics.com",
+        "https://mp.speechmatics.com",
+        "wss://eu.rt.speechmatics.com",
+        "wss://us.rt.speechmatics.com"
+      ]
     }
   ],
   "supported_languages": ["en", "ja"]

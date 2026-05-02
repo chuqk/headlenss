@@ -63,6 +63,10 @@ const obNext1Btn = document.getElementById('ob-next-1') as HTMLButtonElement
 const obSmKeyEl = document.getElementById('ob-sm-key') as HTMLInputElement
 const obBackBtn = document.getElementById('ob-back') as HTMLButtonElement
 const obFinishBtn = document.getElementById('ob-finish') as HTMLButtonElement
+const obSmPortalLink = document.getElementById('ob-sm-portal-link') as HTMLAnchorElement
+
+// Toast
+const toastEl = document.getElementById('toast') as HTMLDivElement
 
 // Dashboard
 const statusDotEl = document.getElementById('statusDot') as HTMLSpanElement
@@ -1451,6 +1455,53 @@ function escapeAttr(s: string): string {
   return escapeHtml(s)
 }
 
+// ─── Toast ─────────────────────────────────────────────────────────────
+let toastHideTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(text: string, ms = 2500): void {
+  toastEl.textContent = text
+  toastEl.hidden = false
+  // 1フレーム遅らせて opacity を上げる (display:none → block 直後に transition が効かないため)
+  requestAnimationFrame(() => toastEl.classList.add('visible'))
+  if (toastHideTimer) clearTimeout(toastHideTimer)
+  toastHideTimer = setTimeout(() => {
+    toastEl.classList.remove('visible')
+    setTimeout(() => { toastEl.hidden = true }, 200)
+  }, ms)
+}
+
+/**
+ * 外部ブラウザを開きたいリンク (Speechmatics portal 等) のハンドラ。
+ * Even Realities WebView が target="_blank" を外部ブラウザへ転送するかは未確認。
+ *  - 成功すれば素直に開く
+ *  - 失敗 (同一WebView内遷移 / 何も起きない) でも、URL を clipboard に
+ *    コピーしておくのでユーザは手動で別ブラウザに貼って遷移できる
+ */
+function setupExternalLink(anchor: HTMLAnchorElement): void {
+  anchor.addEventListener('click', async () => {
+    const url = anchor.href
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+        showToast(t('toastUrlCopied'))
+      } else {
+        // 古い WebView 向けフォールバック
+        const ta = document.createElement('textarea')
+        ta.value = url
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        try { document.execCommand('copy'); showToast(t('toastUrlCopied')) }
+        catch { showToast(t('toastUrlCopyFail') + url, 6000) }
+        document.body.removeChild(ta)
+      }
+    } catch {
+      showToast(t('toastUrlCopyFail') + url, 6000)
+    }
+    // preventDefault しない: WebView が外部ブラウザに渡せるなら渡してほしいので素通り
+  })
+}
+
 function refreshLangSelectorLabel(): void {
   const cur = getLanguage()
   langCurrentEl.textContent = LANGUAGE_LABELS[cur]
@@ -1522,6 +1573,7 @@ async function changeLanguage(lang: Language): Promise<void> {
 async function boot(): Promise<void> {
   setupLogToolbar()
   setupLanguageSelector()
+  setupExternalLink(obSmPortalLink)
 
   // 1. Bridge 接続 (必須)
   try {

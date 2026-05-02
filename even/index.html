@@ -52,8 +52,16 @@
         <h2 class="step-title" data-i18n="ob2Title">音声認識キー</h2>
         <p class="step-desc" data-i18n="ob2Desc">
           音声を文字に変換するために Speechmatics の API key を使います。
-          まだ持っていなければ portal.speechmatics.com で無料登録 (月480分まで無料)。
+          月480分まで無料です。
         </p>
+        <a id="ob-sm-portal-link"
+           class="external-link"
+           href="https://portal.speechmatics.com/"
+           target="_blank"
+           rel="noopener noreferrer">
+          <span class="external-link-label" data-i18n="ob2GetKey">API key を取得 →</span>
+          <span class="external-link-url">portal.speechmatics.com</span>
+        </a>
         <input id="ob-sm-key" type="password" data-i18n-placeholder="obSmKeyPh" placeholder="API key を貼り付け"
                autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
         <div class="ob-actions row">
@@ -183,6 +191,10 @@
     </div>
 
   </main>
+
+  <!-- 一時通知トースト (clipboard コピー成功時など) -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
