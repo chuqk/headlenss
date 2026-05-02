@@ -63,6 +63,17 @@ const STRINGS = {
   finalizing:     { en: 'Finalizing…',                          ja: 'Finalizing…' },
   sending:        { en: 'Sending…',                             ja: 'Sending…' },
 
+  // ─── G2 lens header (現在の phase タイトル) ──────────────────
+  g2HeadBoot:         { en: 'Booting',                          ja: '起動中' },
+  g2HeadSetup:        { en: 'Setup',                            ja: '初期設定' },
+  g2HeadRoot:         { en: 'Sessions',                         ja: 'セッション' },
+  g2HeadRecording:    { en: 'Recording',                        ja: '録音中' },
+  g2HeadFinalizing:   { en: 'Transcribing',                     ja: '文字起こし中' },
+  g2HeadPending:      { en: 'Pending',                          ja: '確認待ち' },
+  g2HeadSending:      { en: 'Sending',                          ja: '送信中' },
+  g2HeadCcResponse:   { en: 'Claude Prompt',                    ja: 'Claude 応答' },
+  g2HeadError:        { en: 'Error',                            ja: 'エラー' },
+
   // ─── G2 lens ─────────────────────────────────────────────────
   g2Booting:        { en: 'Booting…',                           ja: '起動中…' },
   g2Setup:          { en: 'SETUP MODE',                         ja: '初期設定中' },

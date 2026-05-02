@@ -8,8 +8,10 @@ import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
 
 const DISPLAY_WIDTH = 576
 const DISPLAY_HEIGHT = 288
-const FOOTER_HEIGHT = 40
-const CONTENT_HEIGHT = DISPLAY_HEIGHT - FOOTER_HEIGHT
+const HEADER_HEIGHT = 32                                // ヘッダ (現在の phase タイトル)
+const FOOTER_HEIGHT = 40                                // フッタ (操作ガイド)
+const CONTENT_TOP = HEADER_HEIGHT
+const CONTENT_HEIGHT = DISPLAY_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT // 216
 
 let bridge: EvenAppBridge | null = null
 let startupRendered = false
@@ -54,13 +56,27 @@ function evtContainer(): TextContainerProperty {
   })
 }
 
+function headerContainer(text: string): TextContainerProperty {
+  return new TextContainerProperty({
+    containerID: 4,
+    containerName: 'header',
+    content: text,
+    xPosition: 0,
+    yPosition: 0,
+    width: DISPLAY_WIDTH,
+    height: HEADER_HEIGHT,
+    isEventCapture: 0,
+    paddingLength: 4,
+  })
+}
+
 function footerContainer(footer: string): TextContainerProperty {
   return new TextContainerProperty({
     containerID: 3,
     containerName: 'footer',
     content: footer,
     xPosition: 0,
-    yPosition: CONTENT_HEIGHT,
+    yPosition: CONTENT_TOP + CONTENT_HEIGHT,
     width: DISPLAY_WIDTH,
     height: FOOTER_HEIGHT,
     isEventCapture: 0,
@@ -68,17 +84,18 @@ function footerContainer(footer: string): TextContainerProperty {
   })
 }
 
-export async function showScreen(content: string, footer: string): Promise<void> {
+export async function showScreen(header: string, content: string, footer: string): Promise<void> {
   await rebuildPage({
-    containerTotalNum: 3,
+    containerTotalNum: 4,
     textObject: [
       evtContainer(),
+      headerContainer(header),
       new TextContainerProperty({
         containerID: 2,
         containerName: 'main',
         content,
         xPosition: 0,
-        yPosition: 0,
+        yPosition: CONTENT_TOP,
         width: DISPLAY_WIDTH,
         height: CONTENT_HEIGHT,
         isEventCapture: 0,
@@ -103,6 +120,20 @@ export async function updateContent(content: string): Promise<void> {
       contentOffset: 0,
       contentLength: 2000,
       content,
+    }),
+  )
+}
+
+export async function updateHeader(header: string): Promise<void> {
+  if (!bridge) return
+  console.log(`[renderer] textContainerUpgrade #4 (header: "${header.slice(0, 40)}")`)
+  await bridge.textContainerUpgrade(
+    new TextContainerUpgrade({
+      containerID: 4,
+      containerName: 'header',
+      contentOffset: 0,
+      contentLength: 2000,
+      content: header,
     }),
   )
 }

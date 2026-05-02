@@ -8,7 +8,7 @@ import {
   trackPcmFrame,
 } from './audio'
 import { onEvenHubEvent, setEventHandlers } from './events'
-import { initRenderer, resetPageState, showScreen, updateContent, updateFooter } from './renderer'
+import { initRenderer, resetPageState, showScreen, updateContent, updateFooter, updateHeader } from './renderer'
 import {
   HeadlenssClient,
   type ChatItem,
@@ -517,6 +517,26 @@ function buildG2Footer(): string {
   }
 }
 
+/** G2 レンズ最上段に表示する「現在の画面/フェーズ」のタイトル文字列 */
+function buildG2Header(): string {
+  switch (phase) {
+    case 'boot':         return t('g2HeadBoot')
+    case 'unconfigured': return t('g2HeadSetup')
+    case 'rootlist':     return t('g2HeadRoot')
+    case 'recording':    return `${t('g2HeadRecording')}  ${getRecordingSeconds().toFixed(1)}s`
+    case 'finalizing':   return t('g2HeadFinalizing')
+    case 'pending': {
+      const n = pendingSentences.length
+      return n > 1 ? `${t('g2HeadPending')} (${n})` : t('g2HeadPending')
+    }
+    case 'sending':      return `${t('g2HeadSending')} → ${settings.sessionName || ''}`.slice(0, 56)
+    case 'cc-response':  return t('g2HeadCcResponse')
+    case 'error':        return t('g2HeadError')
+    case 'idle':         return settings.sessionName || t('appName')
+    default:             return t('appName')
+  }
+}
+
 async function refreshG2(force = false): Promise<void> {
   if (!bridge) {
     console.log('[refreshG2] bailed: no bridge')
@@ -530,6 +550,7 @@ async function refreshG2(force = false): Promise<void> {
   g2RefreshLastAt = now
   try {
     console.log(`[refreshG2] firing (phase=${phase}, force=${force})`)
+    await updateHeader(buildG2Header())
     await updateContent(buildG2Content())
     await updateFooter(buildG2Footer())
   } catch (err) {
@@ -1608,7 +1629,7 @@ async function changeLanguage(lang: Language): Promise<void> {
   // G2 レンズも「言語切替」を 1 つの画面遷移と扱って rebuildPageContainer で再描画。
   if (bridge) {
     try {
-      await showScreen(buildG2Content(), buildG2Footer())
+      await showScreen(buildG2Header(), buildG2Content(), buildG2Footer())
     } catch (err) {
       log(`G2 re-render on lang change error: ${err}`)
     }
@@ -1677,7 +1698,7 @@ async function boot(): Promise<void> {
         resetPageState()
         void (async () => {
           try {
-            await showScreen(buildG2Content(), buildG2Footer())
+            await showScreen(buildG2Header(), buildG2Content(), buildG2Footer())
           } catch (err) {
             log(`re-render error: ${err}`)
           }
@@ -1691,7 +1712,7 @@ async function boot(): Promise<void> {
       onLog: (msg) => log(msg),
     })
     try {
-      await showScreen(buildG2Content(), buildG2Footer())
+      await showScreen(buildG2Header(), buildG2Content(), buildG2Footer())
       bridge.onEvenHubEvent(onEvenHubEvent)
     } catch (err) {
       log(`G2 initial render error: ${err}`)
@@ -1740,7 +1761,7 @@ async function boot(): Promise<void> {
   // resetPageState は呼ばない (createStartUpPageContainer の二重発行を避ける)。
   if (bridge) {
     try {
-      await showScreen(buildG2Content(), buildG2Footer())
+      await showScreen(buildG2Header(), buildG2Content(), buildG2Footer())
       log(`G2 lens rendered (phase=${phase})`)
     } catch (err) {
       log(`G2 final render error: ${err}`)
