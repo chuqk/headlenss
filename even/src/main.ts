@@ -148,7 +148,13 @@ let probeDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let rtSession: SpeechmaticsRT | null = null
 let liveTranscript = '' // 録音中のpartial+final結合表示用
 let recordingReady = false // RT接続+G2マイク起動が完了して実際に音声を取り始めたか
-let pendingText = ''    // 確定待ちのテキスト (送信 or 破棄選択前)
+// 確定待ちのテキストを「録音1回ぶん = 1文」単位で配列管理する。
+// pending 中に追加クリック → 新たな録音 → 末尾に append。
+// 下スクロールで末尾の1文だけ削除。
+let pendingSentences: string[] = []
+function pendingDisplayText(): string { return pendingSentences.join('\n') }
+function pendingSendText(): string    { return pendingSentences.join(' ') }
+function pendingHasContent(): boolean { return pendingSentences.some((s) => s.trim().length > 0) }
 let tmuxOutput = ''     // (legacy) tmux 出力 — 現状ダッシュボードとレンズには使わない
 let outputPollTimer: ReturnType<typeof setInterval> | null = null
 let outputFetchOkLogged = false
@@ -264,7 +270,7 @@ function claudeStatusMark(s: ClaudeSessionInfo): string {
 function updatePendingUI(): void {
   if (phase === 'pending') {
     pendingSection.hidden = false
-    pendingTextEl.textContent = pendingText || '(empty)'
+    pendingTextEl.textContent = pendingDisplayText() || '(empty)'
   } else {
     pendingSection.hidden = true
   }
@@ -312,13 +318,15 @@ function buildG2Content(): string {
     lines.push('Finalizing…')
     lines.push('▌ ' + (liveTranscript || '(processing)'))
   } else if (phase === 'pending') {
-    lines.push('Confirm: ↑Send  ↓Discard')
+    // 件数表示 (1件なら省略、複数なら "Pending (3 sentences)" のように)
+    const n = pendingSentences.length
+    lines.push(n > 1 ? `Pending (${n} sentences)` : 'Pending')
     lines.push('')
-    lines.push(pendingText || '(empty)')
+    lines.push(pendingDisplayText() || '(empty)')
   } else if (phase === 'sending') {
     lines.push(`Sending → ${settings.sessionName}`)
     lines.push('')
-    lines.push(pendingText.slice(0, 200))
+    lines.push(pendingSendText().slice(0, 200))
   } else if (phase === 'unconfigured') {
     // 初期設定中はそれを大きく明示する
     const s = statusForCurrentPhase()
@@ -1160,16 +1168,16 @@ async function stopRecordingToPending(): Promise<void> {
     rtSession?.abort()
     rtSession = null
     durationEl.textContent = '0.0s'
-    pendingText = ''
     liveTranscript = ''
-    phase = 'idle'
+    // 既存 pendingSentences があるなら戻る、無ければ idle
+    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
     recomputePhase()
     return
   }
 
   const rt = rtSession
   if (!rt) {
-    phase = 'idle'
+    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
     recomputePhase()
     return
   }
@@ -1190,9 +1198,8 @@ async function stopRecordingToPending(): Promise<void> {
     })
     rtSession = null
     durationEl.textContent = '0.0s'
-    pendingText = ''
     liveTranscript = ''
-    phase = 'idle'
+    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
     recomputePhase()
     return
   } finally {
@@ -1200,19 +1207,18 @@ async function stopRecordingToPending(): Promise<void> {
   }
 
   durationEl.textContent = '0.0s'
+  liveTranscript = ''
 
   if (!text) {
-    log('RT returned empty text — auto-discarding')
-    pendingText = ''
-    liveTranscript = ''
-    phase = 'idle'
+    log('RT returned empty text — not appending')
+    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
     recomputePhase()
     return
   }
 
-  // pending — ユーザの↑/↓を待つ
-  pendingText = text
-  liveTranscript = ''
+  // 既存pendingに新しい文を append
+  pendingSentences.push(text)
+  log(`pending: appended sentence #${pendingSentences.length}`)
   phase = 'pending'
   paintStatus()
   updateRecordButton()
@@ -1223,13 +1229,13 @@ async function stopRecordingToPending(): Promise<void> {
 /** pending → サーバ送信 → idle */
 async function confirmAndSend(): Promise<void> {
   if (phase !== 'pending') return
-  const text = pendingText
-  if (!text) {
-    pendingText = ''
+  if (!pendingHasContent()) {
+    pendingSentences = []
     phase = 'idle'
     recomputePhase()
     return
   }
+  const text = pendingSendText()
   phase = 'sending'
   paintStatus()
   updateRecordButton()
@@ -1242,7 +1248,7 @@ async function confirmAndSend(): Promise<void> {
       text,
       submit: settings.submitOnSend,
     })
-    log(`sendKeys ok → ${settings.sessionName}`)
+    log(`sendKeys ok → ${settings.sessionName} (${pendingSentences.length} sentences)`)
     addHistoryEntry({
       text,
       session: settings.sessionName,
@@ -1260,7 +1266,7 @@ async function confirmAndSend(): Promise<void> {
       errorMsg,
     })
   } finally {
-    pendingText = ''
+    pendingSentences = []
     phase = 'idle'
     resetScroll()
     recomputePhase()
@@ -1269,24 +1275,64 @@ async function confirmAndSend(): Promise<void> {
   }
 }
 
-/** pending → 破棄 → idle */
+/** pending → 全部破棄 → idle (⊕⊕ で呼ばれる) */
 function discardPending(): void {
   if (phase !== 'pending') return
-  log('pending discarded')
-  pendingText = ''
+  log(`pending discarded (${pendingSentences.length} sentences dropped)`)
+  pendingSentences = []
   phase = 'idle'
   recomputePhase()
 }
 
-/** pending 中に下スクロール = 確定テキストの削除のみ (画面遷移はしない) */
-function clearPendingText(): void {
+/**
+ * pending 中の下スクロール = 末尾1文だけ削除。
+ * 全文無くなったら idle に戻る。
+ */
+function removeLastSentence(): void {
   if (phase !== 'pending') return
-  if (!pendingText && !liveTranscript) return
-  log('pending text cleared')
-  pendingText = ''
-  liveTranscript = ''
+  if (pendingSentences.length === 0) {
+    phase = 'idle'
+    recomputePhase()
+    return
+  }
+  const removed = pendingSentences.pop()
+  log(`pending: removed last sentence "${(removed ?? '').slice(0, 40)}" (remaining ${pendingSentences.length})`)
+  if (pendingSentences.length === 0) {
+    phase = 'idle'
+    recomputePhase()
+    return
+  }
   updatePendingUI()
   paintStatus()
+  void refreshG2(true)
+}
+
+/**
+ * 録音をキャンセルする (⊕⊕ で呼ばれる)。
+ * Speechmatics 接続を破棄し、PCM をすべて捨て、新しい文は append しない。
+ * 既存 pendingSentences があれば pending 状態に戻り、無ければ idle へ戻る。
+ */
+async function abortRecording(): Promise<void> {
+  if (phase !== 'recording') return
+  log(`recording aborted (kept ${pendingSentences.length} sentences)`)
+  stopRecordingTimer()
+  // G2 マイク停止
+  try {
+    if (bridge) await bridge.audioControl(false)
+  } catch (err) {
+    log(`Stop error: ${err}`)
+  }
+  // RT セッションを破棄 (final 結果は受け取らない)
+  rtSession?.abort()
+  rtSession = null
+  resetPcmCounter()
+  liveTranscript = ''
+  durationEl.textContent = '0.0s'
+  recordingReady = false
+  phase = pendingSentences.length > 0 ? 'pending' : 'idle'
+  paintStatus()
+  updateRecordButton()
+  updatePendingUI()
   void refreshG2(true)
 }
 
@@ -1295,12 +1341,8 @@ async function toggleRecording(): Promise<void> {
   if (phase === 'recording') {
     await stopRecordingToPending()
   } else if (phase === 'pending') {
-    // テキストが消されている (下スクロールで削除直後) ならクリックで再録音
-    if (!pendingText.trim() && !liveTranscript.trim()) {
-      await startRecording()
-      return
-    }
-    // 確定テキストがある状態のクリックは誤操作防止のため無視
+    // 追加録音 — 既存 pendingSentences は保持されたまま新しい文を末尾に追加する
+    await startRecording()
     return
   } else if (phase === 'rootlist') {
     openSelectedFromRoot()
@@ -1602,7 +1644,7 @@ async function boot(): Promise<void> {
       },
       onScrollDown: () => {
         if (phase === 'rootlist') moveRootCursor(1)
-        else if (phase === 'pending') clearPendingText() // 削除のみ。idleに戻すのはダブルタップ
+        else if (phase === 'pending') removeLastSentence() // 末尾1文だけ削除。空になれば idle
         else if (phase === 'idle') scrollForward()
         else if (phase === 'cc-response') moveRespondCursor(1)
       },
@@ -1610,7 +1652,8 @@ async function boot(): Promise<void> {
       // 二重クリック: 各 phase での「戻る/キャンセル」操作
       onDoubleClick: () => {
         if (phase === 'idle') backToRoot()
-        else if (phase === 'pending') discardPending() // 破棄して idle へ
+        else if (phase === 'recording') void abortRecording()  // 録音中止 (新しい文は追加しない)
+        else if (phase === 'pending') discardPending()         // pending 全破棄 → idle
         else if (phase === 'cc-response') {
           // 応答キャンセル → idle に戻る
           phase = 'idle'

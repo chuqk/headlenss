@@ -84,9 +84,9 @@ const STRINGS = {
   // G2 footer (28全角文字 = 56半角文字 以内)。各 phase で利用可能な全操作を網羅する。
   // 共通記法: `Click:X ↑↓:Y ⊕⊕:Z` (⊕⊕ = double click)
   g2FootRoot:       { en: 'Click:Open ↑↓:Nav ⊕⊕:Exit',          ja: 'Click:開く ↑↓:移動 ⊕⊕:終了' },
-  g2FootRecOff:     { en: 'Click: Stop',                         ja: 'Click: 停止' },
+  g2FootRecOff:     { en: 'Click:Done ⊕⊕:Cancel',                ja: 'Click:録音終了 ⊕⊕:取消' },
   g2FootFinalizing: { en: 'Transcribing…',                       ja: '文字起こし中…' },
-  g2FootPending:    { en: '↑:Send ↓:Erase ⊕⊕:Back',             ja: '↑:送信 ↓:削除 ⊕⊕:戻る' },
+  g2FootPending:    { en: 'Click:Add ↑:Send ↓:Del ⊕⊕:Back',     ja: 'Click:追加 ↑:送信 ↓:削除 ⊕⊕:戻る' },
   g2FootSending:    { en: 'Sending to tmux…',                    ja: 'tmuxに送信中…' },
   g2FootSetup:      { en: 'Set up on phone',                     ja: 'スマホで設定' },
   g2FootIdle:       { en: 'Click:Rec ↑↓:Scroll ⊕⊕:Back',        ja: 'Click:録音 ↑↓:履歴 ⊕⊕:戻る' },
