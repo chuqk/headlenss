@@ -115,15 +115,15 @@ const STRINGS = {
   g2Sessions:       { en: 'Claude sessions',                    ja: 'Claude セッション' },
   g2ClaudeAck:      { en: 'Claude waiting',                     ja: 'Claude 応答待ち' },
   // G2 footer (28全角文字 = 56半角文字 以内)。各 phase で利用可能な全操作を網羅する。
-  // 共通記法: `Tap:X ↑↓:Y 2Tap:Z` (2Tap = double tap)
-  g2FootRoot:       { en: 'Tap:Open ↑↓:Nav 2Tap:Exit',           ja: 'タップ:開く ↑↓:移動 2タップ:終了' },
-  g2FootRecOff:     { en: 'Tap:Done 2Tap:Cancel',                ja: 'タップ:録音終了 2タップ:取消' },
-  g2FootFinalizing: { en: 'Transcribing…',                       ja: '文字起こし中…' },
-  g2FootPending:    { en: 'Tap:Add ↑:Send ↓:Del 2Tap:Back',      ja: 'タップ:追加 ↑:送信 ↓:削除 2タップ:戻る' },
-  g2FootSending:    { en: 'Sending to tmux…',                    ja: 'tmuxに送信中…' },
-  g2FootSetup:      { en: 'Set up on phone',                     ja: 'スマホで設定' },
-  g2FootIdle:       { en: 'Tap:Rec ↑↓:Scroll 2Tap:Back',         ja: 'タップ:録音 ↑↓:履歴 2タップ:戻る' },
-  g2FootCcResponse: { en: '↑↓:Pick Tap:OK 2Tap:Cancel',          ja: '↑↓:選択 タップ:確定 2タップ:取消' },
+  // 共通記法: `Tap:X　↑↓:Y　2Tap:Z` (区切りは全角スペース U+3000、2Tap = double tap)
+  g2FootRoot:       { en: 'Tap:Open　↑↓:Nav　2Tap:Exit',           ja: 'タップ:開く　↑↓:移動　2タップ:終了' },
+  g2FootRecOff:     { en: 'Tap:Done　2Tap:Cancel',                     ja: 'タップ:録音終了　2タップ:取消' },
+  g2FootFinalizing: { en: 'Transcribing…',                                 ja: '文字起こし中…' },
+  g2FootPending:    { en: 'Tap:Add　↑:Send　↓:Del　2Tap:Back', ja: 'タップ:追加　↑:送信　↓:削除　2タップ:戻る' },
+  g2FootSending:    { en: 'Sending to tmux…',                              ja: 'tmuxに送信中…' },
+  g2FootSetup:      { en: 'Set up on phone',                               ja: 'スマホで設定' },
+  g2FootIdle:       { en: 'Tap:Rec　↑↓:Scroll　2Tap:Back',         ja: 'タップ:録音　↑↓:履歴　2タップ:戻る' },
+  g2FootCcResponse: { en: '↑↓:Pick　Tap:OK　2Tap:Cancel',          ja: '↑↓:選択　タップ:確定　2タップ:取消' },
   g2NoOutput:       { en: '(no output yet)',                    ja: '(まだ出力なし)' },
 } as const
 
