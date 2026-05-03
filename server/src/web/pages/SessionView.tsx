@@ -224,58 +224,25 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     const ro = new ResizeObserver(() => fitAndPushSize());
     ro.observe(container);
 
-    // モバイルで onscreen keyboard が出るとビューポートが縮む。
-    // body.session-view-locked + .page-session を position:fixed + height:var(--app-height)
-    // でビューポートにアンカーし、iOS Chrome/Safari の「focus時 body 自動スクロール」を封じる。
-    document.body.classList.add('session-view-locked');
-    let lastViewportH = window.visualViewport?.height ?? window.innerHeight;
-    const applyVisualViewportHeight = () => {
+    // visualViewport.height を CSS 変数 --vvh に同期。
+    // スマホでソフトウェアキーボードが出た時に xterm 表示領域をその上の可視領域だけに縮める。
+    // デスクトップでは visualViewport.height = innerHeight なので影響なし。
+    const syncVVH = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
-      document.documentElement.style.setProperty('--app-height', `${h}px`);
-      const shrunk = h < lastViewportH - 80; // キーボード出現とみなす閾値
-      lastViewportH = h;
-      // visualViewport が変わるとビューポートの位置自体も動くため、
-      // window をスクロールして visualViewport の上端 (offsetTop) を 0 に揃える
-      if (window.visualViewport) {
-        window.scrollTo(0, 0);
-      }
-      // CSS反映を1フレーム待ってから fit + scroll (iOS で寸法が落ち着くまでにラグがある)
-      requestAnimationFrame(() => {
-        fitAndPushSize();
-        if (shrunk) {
-          userScrolledUp = false;
-          term.scrollToBottom();
-        }
-      });
+      document.documentElement.style.setProperty('--vvh', `${h}px`);
+      requestAnimationFrame(() => fitAndPushSize());
     };
-    applyVisualViewportHeight();
-    window.visualViewport?.addEventListener('resize', applyVisualViewportHeight);
-    window.visualViewport?.addEventListener('scroll', applyVisualViewportHeight);
-
-    // ターミナル(の hidden textarea)に focus が入った時にも追加で再フィット & 末尾へ。
-    // visualViewport の resize より前に focus が来るケースがあるための保険。
-    const onFocusIn = () => {
-      // 200ms 後にもう一度 (キーボードのアニメーション完了を待つ)
-      setTimeout(() => {
-        const h = window.visualViewport?.height ?? window.innerHeight;
-        document.documentElement.style.setProperty('--app-height', `${h}px`);
-        window.scrollTo(0, 0);
-        fitAndPushSize();
-        userScrolledUp = false;
-        term.scrollToBottom();
-      }, 200);
-    };
-    container.addEventListener('focusin', onFocusIn);
+    syncVVH();
+    window.visualViewport?.addEventListener('resize', syncVVH);
+    window.visualViewport?.addEventListener('scroll', syncVVH);
 
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener('resize', onWindowResize);
-      window.visualViewport?.removeEventListener('resize', applyVisualViewportHeight);
-      window.visualViewport?.removeEventListener('scroll', applyVisualViewportHeight);
-      container.removeEventListener('focusin', onFocusIn);
-      document.body.classList.remove('session-view-locked');
-      document.documentElement.style.removeProperty('--app-height');
+      window.visualViewport?.removeEventListener('resize', syncVVH);
+      window.visualViewport?.removeEventListener('scroll', syncVVH);
+      document.documentElement.style.removeProperty('--vvh');
       ro.disconnect();
       container.removeEventListener('touchstart', onTouchStart);
       container.removeEventListener('touchmove', onTouchMove);
@@ -289,7 +256,7 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
   }, [sessionName]);
 
   return (
-    <div className="page page-session">
+    <div className="page-session">
       <header className="session-header">
         <button onClick={onBack} aria-label="back">
           ← back

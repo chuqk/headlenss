@@ -168,31 +168,13 @@ button {
   color: var(--danger);
 }
 
-/* スマホ(iOS Chrome/Safari) がフォーカス時に body を勝手にスクロールするのを
-   抑止するために body 自体を position:fixed で固定。SessionView マウント中だけ
-   body.session-view-locked を付ける(他のページ挙動を壊さない)。 */
-body.session-view-locked {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  width: 100%;
-  -webkit-overflow-scrolling: auto;
-  overscroll-behavior: none;
-}
-
-/* .page-session を visualViewport.height (CSS変数 --app-height) で固定。
-   position:fixed で常にビューポートにアンカーする。 */
+/* visualViewport.height を JS で --vvh に同期。
+   スマホでキーボードが出たら xterm 表示領域を可視領域(=キーボード上)だけに縮める。
+   デスクトップでは visualViewport.height = innerHeight なので常に全画面。 */
 .page-session {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--app-height, 100dvh);
   max-width: none;
   padding: 0;
+  height: var(--vvh, 100dvh);
   display: flex;
   flex-direction: column;
 }
