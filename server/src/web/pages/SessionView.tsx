@@ -225,19 +225,25 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     ro.observe(container);
 
     // モバイルで onscreen keyboard が出るとビューポートが縮む。
-    // visualViewport.height をページ高さに反映してターミナルをキーボードの上に収める。
+    // CSS 変数 --app-height に visualViewport.height をセットし、
+    // .page-session を position:fixed + height:var(--app-height) で
+    // 常に「見えている領域」に張り付ける(body の自動スクロールも封じている)。
     // キーボードが出たら自動で末尾(カーソル位置)にスクロールして入力欄が見えるようにする。
-    const pageEl = container.closest('.page-session') as HTMLElement | null;
     let lastViewportH = window.visualViewport?.height ?? window.innerHeight;
     const applyVisualViewportHeight = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
-      if (pageEl) pageEl.style.height = `${h}px`;
+      document.documentElement.style.setProperty('--app-height', `${h}px`);
       // ビューポートが縮んだ(=キーボード出現)タイミングで末尾へジャンプ
       if (h < lastViewportH - 80) {
         userScrolledUp = false;
         term.scrollToBottom();
       }
       lastViewportH = h;
+      // visualViewport が変わるとビューポートの位置自体も動くため、
+      // window をスクロールして visualViewport の上端 (offsetTop) を 0 に揃える
+      if (window.visualViewport) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
       fitAndPushSize();
     };
     applyVisualViewportHeight();
@@ -250,7 +256,7 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       window.removeEventListener('resize', onWindowResize);
       window.visualViewport?.removeEventListener('resize', applyVisualViewportHeight);
       window.visualViewport?.removeEventListener('scroll', applyVisualViewportHeight);
-      if (pageEl) pageEl.style.height = '';
+      document.documentElement.style.removeProperty('--app-height');
       ro.disconnect();
       container.removeEventListener('touchstart', onTouchStart);
       container.removeEventListener('touchmove', onTouchMove);
