@@ -114,6 +114,42 @@ body[data-view="dashboard"] details.card:not(#settingsDetails):not(#claudeSessio
   border-radius: 6px;
 }
 .claude-kill:hover { color: var(--err); background: rgba(255,255,255,0.04); }
+.claude-kill.kill-pending {
+  color: white;
+  background: var(--err);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+}
+.claude-kill.kill-busy {
+  color: white;
+  background: var(--err);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  opacity: 0.85;
+  cursor: progress;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.claude-kill.kill-busy:hover {
+  /* hover 上書き解除: ビジー中は色を変えない */
+  color: white;
+  background: var(--err);
+}
+.claude-kill .kill-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: kill-spin 0.7s linear infinite;
+}
+@keyframes kill-spin {
+  to { transform: rotate(360deg); }
+}
 .claude-empty {
   color: var(--muted);
   font-size: 0.88rem;
