@@ -127,10 +127,12 @@ type Phase =
   | 'error'
 
 const TMUX_OUTPUT_LINES = 200          // (legacy) capture-pane 用 — 現状未使用
-// G2 レンズの content area は 248px。LVGL のフォント行高に対して 8 行流すと
-// 容量を超えて自動的にスクロールバーが描画されてしまう。SDK には scrollbar
-// 抑止のフィールドが無いため、行数を絞ってコンテナ内に収める方針を採る。
-const CHAT_DISPLAY_LINES = 6           // G2レンズに出す chat 行数 (scrollbar 抑止のため余裕を持たせる)
+// G2 レンズの content area は CONTENT_HEIGHT=216px - paddingLength*2(=16px) ≒ 200px。
+// LVGL のフォント行高 ~30px に対して 6 行送ると 180px でほぼ満杯になり、行間や
+// ディセンダの揺らぎで容量を超えると自動スクロールバーが描画されてしまう。
+// SDK には scrollbar 抑止のフィールドが無いため、行数を 5 に絞って確実に収める。
+// (旧コメントの 248px は古いレイアウト時代のもの)
+const CHAT_DISPLAY_LINES = 5           // G2レンズに出す chat 行数 (scrollbar 抑止のため余裕を持たせる)
 const CHAT_WRAP_WIDTH = 56             // 全角28文字相当の視覚カラム幅 (ASCII=1, CJK等=2 でカウント)
 const CC_POLL_INTERVAL_MS = 1500       // Claude sessions / chat / pending のポーリング間隔
 const ROOT_LIST_VISIBLE = 8            // G2 root 画面に同時表示するセッション数
