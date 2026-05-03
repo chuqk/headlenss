@@ -39,76 +39,29 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     term.open(container);
     fit.fit();
 
+    // xterm.js v5.5.0 は .xterm root に touchstart/touchmove を {passive:false} で attach し、
+    // touchmove で preventDefault() を呼んで iOS のネイティブ慣性スクロールを殺している。
+    // capture 段階で stopImmediatePropagation して xterm の内部ハンドラに届かせない。
+    const xtermRoot = container.querySelector('.xterm') as HTMLElement | null;
+    const swallowTouch = (e: Event) => e.stopImmediatePropagation();
+    if (xtermRoot) {
+      xtermRoot.addEventListener('touchstart', swallowTouch, { capture: true, passive: true });
+      xtermRoot.addEventListener('touchmove', swallowTouch, { capture: true, passive: true });
+      xtermRoot.addEventListener('touchend', swallowTouch, { capture: true, passive: true });
+      xtermRoot.addEventListener('touchcancel', swallowTouch, { capture: true, passive: true });
+    }
+
     let ws: WebSocket | null = null;
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // ホイールで履歴を遡っている間は新規出力で勝手に最下部に飛ばないようにする。
-    // xterm.js の baseY/viewportY は非同期更新で誤判定するため、ホイール/タッチ操作だけを信頼。
+    // 履歴を遡っている間は新規出力で勝手に最下部に飛ばないようにするフラグ。
+    // .xterm-viewport の native scroll → xterm 内部 _handleScroll → onScroll で追従する。
     let userScrolledUp = false;
-    const updateScrollFlag = (delta: number) => {
-      if (delta < 0) {
-        userScrolledUp = true;
-      } else if (delta > 0) {
-        requestAnimationFrame(() => {
-          const buf = term.buffer.active;
-          if (buf.viewportY >= buf.baseY) userScrolledUp = false;
-        });
-      }
-    };
-    term.attachCustomWheelEventHandler((event) => {
-      updateScrollFlag(event.deltaY);
-      return true;
+    const onScrollDisp = term.onScroll(() => {
+      const buf = term.buffer.active;
+      userScrolledUp = buf.viewportY < buf.baseY;
     });
-
-    // タッチ(スマホ)スクロール: 縦スワイプで履歴を遡れるようにする。
-    // xterm.js には built-in の touch scroll がないため自前で実装。
-    // touch-action: none を CSS で立てて、ブラウザのデフォルトスクロールを抑止。
-    let touchActiveId: number | null = null;
-    let lastTouchY = 0;
-    // スワイプ量を行数に変換するスケール (小さいほど高速スクロール)。
-    // 行高さそのままだと指を 200px 動かしても 12 行しか進まないので半分にして倍速。
-    const PX_PER_LINE = 8;
-    const onTouchStart = (e: TouchEvent) => {
-      if (touchActiveId !== null) return;
-      if (e.touches.length !== 1) return;
-      const t = e.touches[0];
-      touchActiveId = t.identifier;
-      lastTouchY = t.clientY;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (touchActiveId === null) return;
-      let touch: Touch | null = null;
-      for (let i = 0; i < e.touches.length; i++) {
-        if (e.touches[i].identifier === touchActiveId) {
-          touch = e.touches[i];
-          break;
-        }
-      }
-      if (!touch) return;
-      const dy = lastTouchY - touch.clientY; // 上スワイプ(指を上へ) = dy>0 = 下方向(新しい行へ)
-      const lines = Math.trunc(dy / PX_PER_LINE);
-      if (lines !== 0) {
-        // 指を上に動かした (dy>0) → 下スクロール = scrollLines(+) = newer
-        // 指を下に動かした (dy<0) → 上スクロール = scrollLines(-) = older
-        term.scrollLines(lines);
-        lastTouchY -= lines * PX_PER_LINE;
-        updateScrollFlag(dy);
-        e.preventDefault();
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === touchActiveId) {
-          touchActiveId = null;
-          break;
-        }
-      }
-    };
-    container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchmove', onTouchMove, { passive: false });
-    container.addEventListener('touchend', onTouchEnd, { passive: true });
-    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
     // Shift+Enter: bracketed paste で改行をペースト扱いに包んで送る (split-end と同じ)。
     //   Claude Code を含む多くの TUI 入力欄が DECSET 2004 を有効にしており、
@@ -270,10 +223,13 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       document.documentElement.style.removeProperty('--vvh');
       refitRef.current = null;
       ro.disconnect();
-      container.removeEventListener('touchstart', onTouchStart);
-      container.removeEventListener('touchmove', onTouchMove);
-      container.removeEventListener('touchend', onTouchEnd);
-      container.removeEventListener('touchcancel', onTouchEnd);
+      if (xtermRoot) {
+        xtermRoot.removeEventListener('touchstart', swallowTouch, { capture: true } as EventListenerOptions);
+        xtermRoot.removeEventListener('touchmove', swallowTouch, { capture: true } as EventListenerOptions);
+        xtermRoot.removeEventListener('touchend', swallowTouch, { capture: true } as EventListenerOptions);
+        xtermRoot.removeEventListener('touchcancel', swallowTouch, { capture: true } as EventListenerOptions);
+      }
+      onScrollDisp.dispose();
       onDataDisp.dispose();
       onResizeDisp.dispose();
       ws?.close();

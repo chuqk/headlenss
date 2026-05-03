@@ -20,6 +20,14 @@ body,
   margin: 0;
 }
 
+html,
+body {
+  /* iOS Chrome の pull-to-refresh と body の rubber-band overscroll を抑止。
+     ターミナルの native scroll が常に「ページ最上部から下に引っ張られた」と
+     誤認されてリロードに飛ぶのを防ぐ。 */
+  overscroll-behavior-y: none;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -221,6 +229,22 @@ button {
   background: #0e0e10;
   padding: 0.5rem;
   overflow: hidden;
-  /* スマホでブラウザのデフォルト touch スクロールを抑止して xterm.js 側に渡す */
-  touch-action: none;
+  /* .xterm-viewport (overflow-y: scroll) に iOS のネイティブ慣性スクロールを任せる。
+     縦パンだけブラウザに渡し、横スワイプ「戻る」ジェスチャは抑止。 */
+  touch-action: pan-y;
+}
+
+/* xterm.js v5 のデフォルト DOM 構造で .xterm-screen が .xterm-viewport の上に
+   重なって hit-test を奪うため、中央のタッチがネイティブスクロール対象 (=viewport)
+   に届かない。pointer-events: none で touch を viewport まで貫通させる。
+   モバイル(タッチデバイス)限定にして PC のマウス選択は壊さない。 */
+@media (hover: none) and (pointer: coarse) {
+  .xterm .xterm-screen {
+    pointer-events: none;
+  }
+  /* helper-textarea (キーボード入力受け口) は別要素なのでフォーカスは生きるが、
+     念のため pointer-events を auto に戻す。 */
+  .xterm .xterm-helper-textarea {
+    pointer-events: auto;
+  }
 }
