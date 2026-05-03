@@ -99,7 +99,9 @@ export async function showScreen(header: string, content: string, footer: string
         width: DISPLAY_WIDTH,
         height: CONTENT_HEIGHT,
         isEventCapture: 0,
-        paddingLength: 4,
+        // paddingLength: 4 だと最終行のディセンダが下端 border に重なって切れて見える。
+        // 上下に余白を取って末尾文字 (とくに日本語の縦画) が入りきるようにする。
+        paddingLength: 8,
         borderWidth: 1,
         borderColor: 13,
         borderRadius: 0,
