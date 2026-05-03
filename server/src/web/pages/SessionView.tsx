@@ -17,6 +17,8 @@ type ServerMsg =
 
 export function SessionView({ sessionName, onBack }: { sessionName: string; onBack: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // 「この画面に合わせる」ボタンが呼ぶ実体。useEffect 内で確定する。
+  const refitRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -236,13 +238,37 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     window.visualViewport?.addEventListener('resize', syncVVH);
     window.visualViewport?.addEventListener('scroll', syncVVH);
 
+    // 「この画面に合わせる」ボタン用の実体。
+    // tmux ペインは1サイズしか持てないので、複数クライアント (PC/スマホ) で
+    // 同時接続している時は最後に resize した方が勝つ。今見ているクライアントで
+    // 明示的に fit + resize + refresh を打って自分のサイズに揃え直す。
+    const refit = () => {
+      fitAndPushSize();
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'refresh' }));
+      }
+    };
+    refitRef.current = refit;
+
+    // タブが visible になった時 / ウィンドウに focus が戻った時に自動 refit。
+    // 別端末/別タブからこのページに切り替えた瞬間、自分のサイズで tmux を
+    // 取り戻して最新画面を取得する。手動の fit ボタンと同じ動作。
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refit();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', refit);
+
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener('resize', onWindowResize);
       window.visualViewport?.removeEventListener('resize', syncVVH);
       window.visualViewport?.removeEventListener('scroll', syncVVH);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', refit);
       document.documentElement.style.removeProperty('--vvh');
+      refitRef.current = null;
       ro.disconnect();
       container.removeEventListener('touchstart', onTouchStart);
       container.removeEventListener('touchmove', onTouchMove);
@@ -262,6 +288,14 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
           ← back
         </button>
         <span className="session-title">{sessionName}</span>
+        <button
+          className="session-refit"
+          onClick={() => refitRef.current?.()}
+          aria-label="この画面に合わせる"
+          title="この画面サイズに合わせて表示し直す"
+        >
+          ⟳ fit
+        </button>
       </header>
       <div ref={containerRef} className="terminal-container" />
     </div>

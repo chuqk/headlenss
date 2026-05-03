@@ -202,6 +202,18 @@ button {
 
 .session-title {
   font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* tmux ペインを「今見ている画面」に合わせる手動リサイズボタン。
+   PC/スマホで同時接続している時、最後に resize した方が tmux ペインサイズを
+   持っていくので、観たい側でこのボタンを押すと自分のサイズに揃う。 */
+.session-refit {
+  margin-left: auto;
 }
 
 .terminal-container {
