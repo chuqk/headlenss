@@ -174,6 +174,31 @@ let outputFetchOkLogged = false
 let scrollOffset = 0  // chat の末尾から何行戻ったか (0=ライブ末尾)
 let rootCursor = 0    // rootlist 内のカーソル位置 (claudeSessions[index])
 
+// 「最後に開いてから何か動いた」を未読として rootlist に印を出す仕組み。
+// セッション名 → 最後に既読化した unix ms。idle 中はポーリングごとに現在
+// セッションを markAsRead で更新する。localStorage に persist (debounced)。
+const LAST_READ_KEY = 'headlenss_last_read_v1'
+const lastReadAt: Record<string, number> = (() => {
+  try {
+    const raw = localStorage.getItem(LAST_READ_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {}
+  } catch { return {} }
+})()
+let lastReadPersistTimer: ReturnType<typeof setTimeout> | null = null
+function markAsRead(name: string): void {
+  if (!name) return
+  lastReadAt[name] = Date.now()
+  if (lastReadPersistTimer) return
+  lastReadPersistTimer = setTimeout(() => {
+    lastReadPersistTimer = null
+    try { localStorage.setItem(LAST_READ_KEY, JSON.stringify(lastReadAt)) } catch {}
+  }, 1000)
+}
+function isUnread(s: ClaudeSessionInfo): boolean {
+  const last = lastReadAt[s.tmuxSessionName] ?? 0
+  return s.lastSeenAt > last
+}
+
 // Claude Code hook 連携
 let claudeSessions: ClaudeSessionInfo[] = []     // 起動中Claude Codeを持つtmuxセッション一覧
 let claudeChat: ChatItem[] = []                  // 現在選択中セッションのチャット履歴
@@ -382,7 +407,9 @@ function buildRootListView(): string {
     const s = items[i]
     const cursor = i === rootCursor ? '▶ ' : '  '
     const mark = claudeStatusMark(s)
-    lines.push(`${cursor}${s.tmuxSessionName} ${mark}`)
+    // 既読セッションは空白で揃え、未読は '*' でマーク
+    const unread = isUnread(s) ? '*' : ' '
+    lines.push(`${cursor}${s.tmuxSessionName} ${unread}${mark}`)
   }
   return lines.join('\n')
 }
@@ -775,6 +802,8 @@ async function refreshClaudeData(): Promise<void> {
       setOutputDisplay(`(no chat yet for "${settings.sessionName}")`, 'muted')
     }
     if (phase === 'idle' || phase === 'cc-response') void refreshG2(true)
+    // chat を実際に取得して描画している = ユーザは見ている前提なので既読化
+    if (phase === 'idle' || phase === 'cc-response') markAsRead(settings.sessionName)
   } catch (e) {
     const msg = (e as Error).message
     setOutputDisplay(`error: ${msg}`, 'err')
