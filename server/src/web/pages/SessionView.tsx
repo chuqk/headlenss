@@ -225,30 +225,47 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
     ro.observe(container);
 
     // モバイルで onscreen keyboard が出るとビューポートが縮む。
-    // CSS 変数 --app-height に visualViewport.height をセットし、
-    // .page-session を position:fixed + height:var(--app-height) で
-    // 常に「見えている領域」に張り付ける(body の自動スクロールも封じている)。
-    // キーボードが出たら自動で末尾(カーソル位置)にスクロールして入力欄が見えるようにする。
+    // body.session-view-locked + .page-session を position:fixed + height:var(--app-height)
+    // でビューポートにアンカーし、iOS Chrome/Safari の「focus時 body 自動スクロール」を封じる。
+    document.body.classList.add('session-view-locked');
     let lastViewportH = window.visualViewport?.height ?? window.innerHeight;
     const applyVisualViewportHeight = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
       document.documentElement.style.setProperty('--app-height', `${h}px`);
-      // ビューポートが縮んだ(=キーボード出現)タイミングで末尾へジャンプ
-      if (h < lastViewportH - 80) {
-        userScrolledUp = false;
-        term.scrollToBottom();
-      }
+      const shrunk = h < lastViewportH - 80; // キーボード出現とみなす閾値
       lastViewportH = h;
       // visualViewport が変わるとビューポートの位置自体も動くため、
       // window をスクロールして visualViewport の上端 (offsetTop) を 0 に揃える
       if (window.visualViewport) {
-        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        window.scrollTo(0, 0);
       }
-      fitAndPushSize();
+      // CSS反映を1フレーム待ってから fit + scroll (iOS で寸法が落ち着くまでにラグがある)
+      requestAnimationFrame(() => {
+        fitAndPushSize();
+        if (shrunk) {
+          userScrolledUp = false;
+          term.scrollToBottom();
+        }
+      });
     };
     applyVisualViewportHeight();
     window.visualViewport?.addEventListener('resize', applyVisualViewportHeight);
     window.visualViewport?.addEventListener('scroll', applyVisualViewportHeight);
+
+    // ターミナル(の hidden textarea)に focus が入った時にも追加で再フィット & 末尾へ。
+    // visualViewport の resize より前に focus が来るケースがあるための保険。
+    const onFocusIn = () => {
+      // 200ms 後にもう一度 (キーボードのアニメーション完了を待つ)
+      setTimeout(() => {
+        const h = window.visualViewport?.height ?? window.innerHeight;
+        document.documentElement.style.setProperty('--app-height', `${h}px`);
+        window.scrollTo(0, 0);
+        fitAndPushSize();
+        userScrolledUp = false;
+        term.scrollToBottom();
+      }, 200);
+    };
+    container.addEventListener('focusin', onFocusIn);
 
     return () => {
       disposed = true;
@@ -256,6 +273,8 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
       window.removeEventListener('resize', onWindowResize);
       window.visualViewport?.removeEventListener('resize', applyVisualViewportHeight);
       window.visualViewport?.removeEventListener('scroll', applyVisualViewportHeight);
+      container.removeEventListener('focusin', onFocusIn);
+      document.body.classList.remove('session-view-locked');
       document.documentElement.style.removeProperty('--app-height');
       ro.disconnect();
       container.removeEventListener('touchstart', onTouchStart);

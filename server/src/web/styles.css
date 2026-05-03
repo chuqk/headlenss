@@ -168,9 +168,23 @@ button {
   color: var(--danger);
 }
 
-/* スマホで iOS Safari がフォーカス時に body を auto-scroll するのを防ぐ。
-   position: fixed + visualViewport.height (JSが --app-height にセット) で
-   キーボードが出た時もターミナル領域がビューポート内に留まる。 */
+/* スマホ(iOS Chrome/Safari) がフォーカス時に body を勝手にスクロールするのを
+   抑止するために body 自体を position:fixed で固定。SessionView マウント中だけ
+   body.session-view-locked を付ける(他のページ挙動を壊さない)。 */
+body.session-view-locked {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  width: 100%;
+  -webkit-overflow-scrolling: auto;
+  overscroll-behavior: none;
+}
+
+/* .page-session を visualViewport.height (CSS変数 --app-height) で固定。
+   position:fixed で常にビューポートにアンカーする。 */
 .page-session {
   position: fixed;
   top: 0;
@@ -181,10 +195,6 @@ button {
   padding: 0;
   display: flex;
   flex-direction: column;
-}
-
-body:has(.page-session) {
-  overflow: hidden;
 }
 
 .session-header {
