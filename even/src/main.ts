@@ -1295,9 +1295,8 @@ async function stopRecordingToPending(): Promise<void> {
 async function confirmAndSend(): Promise<void> {
   if (phase !== 'pending') return
   if (!pendingHasContent()) {
-    pendingSentences = []
-    phase = 'idle'
-    recomputePhase()
+    // 空のまま送信を試みても何もしない。idle へ自動復帰せず pending に留まる。
+    // ターミナル画面 (idle) へ戻すのはダブルタップ (discardPending) 経由のみ。
     return
   }
   const text = pendingSendText()
@@ -1351,22 +1350,14 @@ function discardPending(): void {
 
 /**
  * pending 中の下スクロール = 末尾1文だけ削除。
- * 全文無くなったら idle に戻る。
+ * 空になっても phase は pending のまま留める。idle (ターミナル画面) に
+ * 戻すのはダブルタップ (discardPending) のみ、というのがユーザ意図。
  */
 function removeLastSentence(): void {
   if (phase !== 'pending') return
-  if (pendingSentences.length === 0) {
-    phase = 'idle'
-    recomputePhase()
-    return
-  }
+  if (pendingSentences.length === 0) return  // 既に空: そのまま pending に留まる
   const removed = pendingSentences.pop()
   log(`pending: removed last sentence "${(removed ?? '').slice(0, 40)}" (remaining ${pendingSentences.length})`)
-  if (pendingSentences.length === 0) {
-    phase = 'idle'
-    recomputePhase()
-    return
-  }
   updatePendingUI()
   paintStatus()
   void refreshG2(true)
