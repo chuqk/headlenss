@@ -1266,14 +1266,18 @@ async function stopRecordingToPending(): Promise<void> {
     durationEl.textContent = '0.0s'
     liveTranscript = ''
     // 既存 pendingSentences があるなら戻る、無ければ idle
-    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
+    // 空録音/失敗でも音声入力画面 (pending) に留まる。idle (ターミナル) へ
+    // 戻すのはダブルタップ (discardPending) 経由のみ。
+    phase = 'pending'
     recomputePhase()
     return
   }
 
   const rt = rtSession
   if (!rt) {
-    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
+    // 空録音/失敗でも音声入力画面 (pending) に留まる。idle (ターミナル) へ
+    // 戻すのはダブルタップ (discardPending) 経由のみ。
+    phase = 'pending'
     recomputePhase()
     return
   }
@@ -1295,7 +1299,9 @@ async function stopRecordingToPending(): Promise<void> {
     rtSession = null
     durationEl.textContent = '0.0s'
     liveTranscript = ''
-    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
+    // 空録音/失敗でも音声入力画面 (pending) に留まる。idle (ターミナル) へ
+    // 戻すのはダブルタップ (discardPending) 経由のみ。
+    phase = 'pending'
     recomputePhase()
     return
   } finally {
@@ -1307,7 +1313,9 @@ async function stopRecordingToPending(): Promise<void> {
 
   if (!text) {
     log('RT returned empty text — not appending')
-    phase = pendingSentences.length > 0 ? 'pending' : 'idle'
+    // 空録音/失敗でも音声入力画面 (pending) に留まる。idle (ターミナル) へ
+    // 戻すのはダブルタップ (discardPending) 経由のみ。
+    phase = 'pending'
     recomputePhase()
     return
   }
