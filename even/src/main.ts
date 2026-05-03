@@ -352,7 +352,9 @@ function buildG2Content(): string {
       lines.push('▌ 録音開始 — お話しください')
     }
   } else if (phase === 'finalizing') {
-    lines.push('▌ ' + (liveTranscript || '(processing)'))
+    // 接続中など PCM が乗る前に停止すると liveTranscript は空のまま finalize に入る。
+    // 「処理中」と見せると実態 (何も処理していない) と齟齬があるので empty 表示にする。
+    lines.push('▌ ' + (liveTranscript || '(empty)'))
   } else if (phase === 'pending') {
     // 件数表示 (1件なら省略、複数なら "Pending (3 sentences)" のように)
     const n = pendingSentences.length
