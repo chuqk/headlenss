@@ -1,11 +1,18 @@
 ---
 name: spawn-claude
-description: ユーザが「新しい Claude を立てて」「別の tmux で Claude を起動して」のように、別の tmux + Claude Code セッションを spawn する要求をしたときに使う。headlenss server の POST /api/sessions を curl で呼んで新規 tmux と Claude Code を起動する。tmux セッション名と作業ディレクトリ (省略可) を引数に取る。
+description: 新しい Claude Code セッション / 別の開発環境 / サンドボックス / 子セッションを立てる要求があったらこの skill を必ず使う。代表的な指示: 「新しい Claude 立てて」「別の Claude Code 起動して」「もう一つ環境作って」「別環境を building / 構築して」「子セッション spawn して」「別 tmux で claude 動かして」「別ディレクトリで作業させたい」など。headlenss server の POST /api/sessions を curl で呼ぶことで、新しい tmux + Claude Code を起動する。**直接 `tmux new-session ... 'claude'` のような bash で立てると Claude Code 起動時の trust prompt (Do you trust this folder?) で永久に固まる**。server 経由でのみ trust 自動承諾ロジックが走るので、必ずこの skill を経由すること。tmux セッション名と作業ディレクトリ (省略可) を引数に取る。
 ---
 
 # spawn-claude
 
 別の tmux 上で新しい Claude Code を起動する。headlenss server (`${HEADLENSS_SERVER_URL}`、未設定なら `http://localhost:3000`) の `POST /api/sessions` を curl で呼ぶ。
+
+## 必ずこの skill を使う理由 (= 直接 tmux で立ててはいけない)
+
+- Claude Code は初回起動時に **trust prompt (`Do you trust this folder?`)** を出す。
+- `tmux new-session -d -s NAME -c DIR 'claude'` のような直接起動だと、誰もこの prompt に応答できず、Claude が起動完了に進まない (= G2 lens / WebView の Claude セッション一覧にも出てこない)。
+- headlenss server の `POST /api/sessions` には、起動した Claude の pane を polling して trust prompt を検出 → Enter で自動承諾するロジックが組み込まれている (`advanceClaudeStartup`)。
+- したがって、**新しい Claude を立てるときは直接 tmux ではなく必ずこの skill (= server 経由) を使う**。
 
 ## 入力
 
