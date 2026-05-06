@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { detectClaudeSessions } from './process-detect.ts';
 import * as store from './store.ts';
 import { resolveTmuxSessionName } from './tmux-resolver.ts';
-import { extractChatFromTranscript, extractLastAssistantText } from './transcript.ts';
+import { extractChatFromTranscript, extractLastAssistantText, sanitizeChatText } from './transcript.ts';
 import type { AskQuestion, HookDecision, RespondInput, SessionStatus } from './types.ts';
 
 const exec = promisify(execFile);
@@ -286,11 +286,17 @@ claudeRouter.get('/claude/sessions/:tmuxName/chat', async (c) => {
     }
   }
 
+  // hook 由来の chat も transcript と同じシステムタグサニタイズを通す
+  // (! 付きで実行された bash コマンド等のラッパが残らないように)。
+  const cleanedHookChat = hookChat
+    .map((m) => ({ ...m, text: sanitizeChatText(m.text) }))
+    .filter((m) => m.text.length > 0);
+
   // hook の最新分が transcript から漏れてる可能性に備えてマージ。
   // transcript を base にして、hook側の項目を text 一致で重複排除。
   const seen = new Set(transcriptChat.map((m) => `${m.role}:${m.text}`));
   const merged = [...transcriptChat];
-  for (const m of hookChat) {
+  for (const m of cleanedHookChat) {
     const key = `${m.role}:${m.text}`;
     if (!seen.has(key)) merged.push(m);
   }

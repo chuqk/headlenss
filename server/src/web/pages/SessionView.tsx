@@ -15,7 +15,17 @@ type ServerMsg =
   | { type: 'attached'; cols: number; rows: number }
   | { type: 'exit'; code: number };
 
-export function SessionView({ sessionName, onBack }: { sessionName: string; onBack: () => void }) {
+type Mode = 'tmux' | 'chat';
+
+export function SessionView({
+  sessionName,
+  onBack,
+  onSwitchMode,
+}: {
+  sessionName: string;
+  onBack: () => void;
+  onSwitchMode: (m: Mode) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 「この画面に合わせる」ボタンが呼ぶ実体。useEffect 内で確定する。
   const refitRef = useRef<(() => void) | null>(null);
@@ -252,6 +262,23 @@ export function SessionView({ sessionName, onBack }: { sessionName: string; onBa
         >
           ⟳ fit
         </button>
+        <div className="mode-toggle" role="group" aria-label="表示モード">
+          <button
+            type="button"
+            className="mode-toggle-btn active"
+            aria-pressed={true}
+          >
+            tmux
+          </button>
+          <button
+            type="button"
+            className="mode-toggle-btn"
+            onClick={() => onSwitchMode('chat')}
+            aria-pressed={false}
+          >
+            chat
+          </button>
+        </div>
       </header>
       <div ref={containerRef} className="terminal-container" />
     </div>

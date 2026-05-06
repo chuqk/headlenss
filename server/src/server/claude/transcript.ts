@@ -25,6 +25,35 @@ function extractText(content: unknown): string {
 type ContentBlock = { type?: string; text?: unknown; content?: unknown };
 
 /**
+ * Claude Code の transcript に含まれるシステムタグを人間向けにクリーニングする。
+ *  - `<local-command-caveat>...</local-command-caveat>` : 内部用キャプション、完全削除
+ *  - `<system-reminder>...</system-reminder>`           : 内部用注意書き、完全削除
+ *  - `<bash-input>X</bash-input>`                       : `$ X` に変換
+ *  - `<bash-stdout>X</bash-stdout>`                     : 中身だけ残す
+ *  - `<bash-stderr>X</bash-stderr>`                     : 中身だけ残す
+ *  - `<command-name>X</command-name>`                   : `X` に変換 (slash command 名)
+ *  - `<command-message>X</command-message>`             : 削除 (name と重複説明)
+ *  - `<command-args>X</command-args>`                   : 中身を残す
+ *  - 連続改行を 2 行までに圧縮
+ */
+export function sanitizeChatText(text: string): string {
+  let s = text;
+  s = s.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g, '');
+  s = s.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
+  s = s.replace(/<bash-input>([\s\S]*?)<\/bash-input>/g, (_, cmd: string) => `$ ${cmd.trim()}`);
+  s = s.replace(/<bash-stdout>([\s\S]*?)<\/bash-stdout>/g, '$1');
+  s = s.replace(/<bash-stderr>([\s\S]*?)<\/bash-stderr>/g, '$1');
+  s = s.replace(/<command-name>([\s\S]*?)<\/command-name>/g, '$1');
+  s = s.replace(/<command-message>[\s\S]*?<\/command-message>/g, '');
+  s = s.replace(/<command-args>([\s\S]*?)<\/command-args>/g, '$1');
+  // 念のため他の <foo>...</foo> 系も剥がす(残ると意味不明になる)。
+  // ただし transcript 中にユーザが意図的に書いた XML/HTML タグは保持したいので、
+  // 既知のラッパに限定し、上記で対応済み。残るのは plain text のはず。
+  s = s.replace(/\n{3,}/g, '\n\n').trim();
+  return s;
+}
+
+/**
  * transcript JSONL からチャット履歴 (user prompt と assistant text) を順序通りに抽出する。
  * - tool_result / tool_use ブロックは除外
  * - sub-agent (isSidechain=true) は除外
@@ -77,8 +106,10 @@ export async function extractChatFromTranscript(
       text = parts.join('').trim();
     }
     if (!text) continue;
+    const cleaned = sanitizeChatText(text);
+    if (!cleaned) continue;
     const ts = parsed.timestamp ? Date.parse(parsed.timestamp) : Date.now();
-    items.push({ role: role as 'user' | 'assistant', text, ts: Number.isFinite(ts) ? ts : Date.now() });
+    items.push({ role: role as 'user' | 'assistant', text: cleaned, ts: Number.isFinite(ts) ? ts : Date.now() });
   }
   return items.slice(-limit);
 }
