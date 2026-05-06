@@ -4,6 +4,9 @@ export type ChatItem = {
   role: ChatRole;
   text: string;
   ts: number;
+  /** サーバ側で動的に注入した「合成メッセージ」(transcript には永続化されない、
+   *  状態通知用などに使われる)。クライアントは true なら表示有無を選べる。 */
+  synthetic?: boolean;
 };
 
 export type SessionStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
@@ -40,6 +43,9 @@ export type ClaudeSession = {
   lastSeenAt: number;
   chat: ChatItem[];
   pending?: Pending;
+  /** Stop hook 受信時刻。次の user-prompt-submit が来るまで「ターン終了済み」フラグとして使う。
+   *  registry の busy が遅れて idle に追いつかない時、考え中インジケータを早めに消すために参照。 */
+  lastStopAt?: number;
 };
 
 export type HookHeaders = {

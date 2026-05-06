@@ -82,6 +82,22 @@ export function setStatus(tmuxName: string, status: SessionStatus): void {
   s.lastSeenAt = Date.now();
 }
 
+/** Stop hook 用: 「ターンが終わった」マーカーを立てる */
+export function markStopped(tmuxName: string): void {
+  const s = sessions.get(tmuxName);
+  if (!s) return;
+  s.lastStopAt = Date.now();
+  s.lastSeenAt = Date.now();
+}
+
+/** user-prompt-submit hook 用: 新しいターンが始まるので Stop マーカーをクリア */
+export function clearStopped(tmuxName: string): void {
+  const s = sessions.get(tmuxName);
+  if (!s) return;
+  s.lastStopAt = undefined;
+  s.lastSeenAt = Date.now();
+}
+
 export function createPending(
   tmuxName: string,
   partial: Omit<Pending, 'id' | 'createdAt'>,

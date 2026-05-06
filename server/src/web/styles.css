@@ -328,6 +328,39 @@ button {
   opacity: 0.6;
 }
 
+/* Claude の動作状態インジケータ (busy / waiting-permission / waiting-question)。
+   chat 末尾に控えめに表示して、別タブからも作業中か idle か分かるようにする。 */
+.chat-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.4rem 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.chat-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: chat-status-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-status-busy .chat-status-dot {
+  background: #f5a623;
+}
+
+.chat-status-waiting-permission .chat-status-dot,
+.chat-status-waiting-question .chat-status-dot {
+  background: var(--danger);
+}
+
+@keyframes chat-status-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.1);  }
+}
+
 /* Markdown レンダー結果のスタイル。チャットバブル内に閉じ込めて
    外側のレイアウトを壊さないように。 */
 .markdown-body > :first-child { margin-top: 0; }

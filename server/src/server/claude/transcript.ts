@@ -31,21 +31,28 @@ type ContentBlock = { type?: string; text?: unknown; content?: unknown };
  *  - `<bash-input>X</bash-input>`                       : `$ X` に変換
  *  - `<bash-stdout>X</bash-stdout>`                     : 中身だけ残す
  *  - `<bash-stderr>X</bash-stderr>`                     : 中身だけ残す
- *  - `<command-name>X</command-name>`                   : `X` に変換 (slash command 名)
- *  - `<command-message>X</command-message>`             : 削除 (name と重複説明)
- *  - `<command-args>X</command-args>`                   : 中身を残す
+ *  - `<command-name>X</command-name>` を含むメッセージ  : メッセージ全体を `/X args`
+ *    だけに収束 (skill 本体のテキストは捨てる)
  *  - 連続改行を 2 行までに圧縮
  */
 export function sanitizeChatText(text: string): string {
+  // <command-name> を含む user メッセージは「ユーザが /foo を打ち込んだ」直後に
+  // skill 本体が展開された結果なので、本体テキストは表示せず、コマンド名だけ残す。
+  // (例: /commit-ai を打つと長大な skill 説明が記録される → 履歴で見たいのは /commit-ai だけ)
+  const cmdNameMatch = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
+  if (cmdNameMatch) {
+    const cmdName = cmdNameMatch[1].trim();
+    const cmdArgsMatch = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
+    const cmdArgs = cmdArgsMatch ? cmdArgsMatch[1].trim() : '';
+    return cmdArgs ? `${cmdName} ${cmdArgs}` : cmdName;
+  }
+
   let s = text;
   s = s.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g, '');
   s = s.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
   s = s.replace(/<bash-input>([\s\S]*?)<\/bash-input>/g, (_, cmd: string) => `$ ${cmd.trim()}`);
   s = s.replace(/<bash-stdout>([\s\S]*?)<\/bash-stdout>/g, '$1');
   s = s.replace(/<bash-stderr>([\s\S]*?)<\/bash-stderr>/g, '$1');
-  s = s.replace(/<command-name>([\s\S]*?)<\/command-name>/g, '$1');
-  s = s.replace(/<command-message>[\s\S]*?<\/command-message>/g, '');
-  s = s.replace(/<command-args>([\s\S]*?)<\/command-args>/g, '$1');
   // 念のため他の <foo>...</foo> 系も剥がす(残ると意味不明になる)。
   // ただし transcript 中にユーザが意図的に書いた XML/HTML タグは保持したいので、
   // 既知のラッパに限定し、上記で対応済み。残るのは plain text のはず。

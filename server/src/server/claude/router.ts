@@ -94,6 +94,8 @@ claudeRouter.post('/hooks/user-prompt-submit', async (c) => {
       cwd: body.cwd ?? '',
     });
   }
+  // 新しいターンが始まる: 前ターンの Stop マーカーをクリア
+  store.clearStopped(tmuxName);
   const text = (body.prompt ?? '').trim();
   console.log(`[hook] user-prompt tmux=${tmuxName} len=${text.length}`);
   if (text) store.appendChat(tmuxName, 'user', text);
@@ -119,6 +121,9 @@ claudeRouter.post('/hooks/stop', async (c) => {
     console.log(`[hook] stop -> assistant text len=${text.length}`);
     if (text) store.appendChat(tmuxName, 'assistant', text);
   }
+  // ターン終了マーカーを立てる: registry の busy が idle に追いつくまでの
+  // ラグの間、考え中インジケータをこちらで先に消す。
+  store.markStopped(tmuxName);
   return c.json({});
 });
 
@@ -304,7 +309,40 @@ claudeRouter.get('/claude/sessions/:tmuxName/chat', async (c) => {
   if (merged.length === 0 && !session) {
     return c.json({ error: 'not found' }, 404);
   }
-  return c.json({ chat: merged });
+  // Claude Code の動作状態 (idle / busy / waiting-*) を一緒に返して、
+  // chat UI 側で「考え中…」表示の有無を制御できるようにする。
+  //
+  // 優先順位の根拠:
+  //   - 'waiting-*' は hook 経由(PermissionRequest/PreToolUse)でしか設定されない
+  //   - 'busy' は registry (~/.claude/sessions/<PID>.json) 経由でしか検出されない
+  //   - 'idle' はそれ以外
+  // hook session.status は常に 'idle' か 'waiting-*' (busy になる経路がない)ため、
+  // 単純な ?? チェーンでは registry 由来の 'busy' が永遠に拾われない。merge する。
+  let status: SessionStatus = 'idle';
+  if (det?.status === 'busy') status = 'busy';
+  if (session?.status === 'waiting-permission' || session?.status === 'waiting-question') {
+    status = session.status;
+  }
+  // Stop hook が直近で発火していれば「ターン終了済み」なので busy を抑止。
+  // 次の user-prompt-submit が来るまではこのフラグが残り続け、registry が
+  // idle に追いつくまでの数秒間に「考え中」が残ってしまう問題を消す。
+  if (status === 'busy' && session?.lastStopAt) {
+    status = 'idle';
+  }
+
+  // G2 アプリは status フィールドを読まない(描画は chat 配列だけ)ので、
+  // 状態を 1 行のメッセージとして合成 chat 末尾に注入。`synthetic: true` を立てて
+  // 永続化用ではないことを示し、PC chat はこれをフィルタして dot インジケータと
+  // 二重表示にしないようにする。アニメーションは Date.now ベースで dot 数を回す。
+  if (status !== 'idle') {
+    const dots = '.'.repeat((Math.floor(Date.now() / 500) % 3) + 1);
+    const text =
+      status === 'busy' ? `(考え中${dots})`
+      : status === 'waiting-permission' ? `(許可待ち${dots})`
+      : `(質問待ち${dots})`;
+    merged.push({ role: 'assistant', text, ts: Date.now(), synthetic: true });
+  }
+  return c.json({ chat: merged, status });
 });
 
 claudeRouter.get('/claude/sessions/:tmuxName/pending', (c) => {

@@ -5,7 +5,8 @@ import remarkBreaks from 'remark-breaks';
 import { extractImagesFromClipboard, filterImageFiles, uploadImage } from '../uploads.ts';
 
 type Mode = 'tmux' | 'chat';
-type ChatMessage = { role: 'user' | 'assistant'; text: string; ts: number };
+type ChatMessage = { role: 'user' | 'assistant'; text: string; ts: number; synthetic?: boolean };
+type SessionStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
 
 /** 表示用前処理: `@/tmp/headlenss-uploads/<file>` を見つけたら markdown image
  *  記法 `![](/api/uploads/<file>)` に置き換え、チャットバブル内でインライン
@@ -33,6 +34,8 @@ export function ChatView({
   // 送信直後の楽観的表示メッセージ。サーバ側 (transcript / hook) に同じ user メッセージが
   // 出てきたら自動的にここから取り除く。
   const [pending, setPending] = useState<ChatMessage[]>([]);
+  // Claude Code の動作状態。busy / waiting-* の時に「考え中」インジケータを表示。
+  const [status, setStatus] = useState<SessionStatus>('idle');
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,10 +71,13 @@ export function ChatView({
           if (res.status !== 404) throw new Error(`HTTP ${res.status}`);
           if (!disposed) setServerChat([]);
         } else {
-          const json = (await res.json()) as { chat: ChatMessage[] };
+          const json = (await res.json()) as { chat: ChatMessage[]; status?: SessionStatus };
           if (!disposed) {
-            const next = json.chat ?? [];
+            // 合成メッセージ (status 表示用に server 側で動的注入したもの) は
+            // PC chat では dot インジケータが既にあるので除外。G2 はこれを表示する。
+            const next = (json.chat ?? []).filter((m) => !m.synthetic);
             setServerChat(next);
+            if (json.status) setStatus(json.status);
             // pending のうち、サーバ側に取り込まれたものを除去 (role+text 一致で判定)。
             // 同一文言を 2 回送るケースに備えて 1 件だけ消す。
             setPending((prev) => {
@@ -118,6 +124,17 @@ export function ChatView({
     }
     lastLenRef.current = displayChat.length;
   }, [displayChat.length]);
+
+  // 状態が変化(idle → busy 等)した時にも末尾追従。ユーザが下にいたなら、
+  // 新しく現れた「考え中」インジケータが見える位置に揃える。
+  useEffect(() => {
+    if (!userScrolledUpRef.current) {
+      requestAnimationFrame(() => {
+        const el = scrollerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [status]);
 
   const onScroll = () => {
     userScrolledUpRef.current = !isNearBottom();
@@ -289,6 +306,16 @@ export function ChatView({
               </div>
             );
           })
+        )}
+        {status !== 'idle' && (
+          <div className={`chat-status chat-status-${status}`}>
+            <span className="chat-status-dot" aria-hidden="true" />
+            <span className="chat-status-text">
+              {status === 'busy' && 'Claude が考えています'}
+              {status === 'waiting-permission' && 'Claude が許可を待っています'}
+              {status === 'waiting-question' && 'Claude が質問を待っています'}
+            </span>
+          </div>
         )}
       </div>
       {error && <div className="chat-error">送信エラー: {error}</div>}
