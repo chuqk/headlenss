@@ -2,9 +2,22 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import { extractImagesFromClipboard, filterImageFiles, uploadImage } from '../uploads.ts';
 
 type Mode = 'tmux' | 'chat';
 type ChatMessage = { role: 'user' | 'assistant'; text: string; ts: number };
+
+/** 表示用前処理: `@/tmp/headlenss-uploads/<file>` を見つけたら markdown image
+ *  記法 `![](/api/uploads/<file>)` に置き換え、チャットバブル内でインライン
+ *  画像として表示できるようにする。
+ *  Claude Code が読む元の文字列(transcript / hook 由来)は path のままなので、
+ *  画像参照の意味は壊さない。 */
+function inlineUploadedImages(text: string): string {
+  return text.replace(
+    /@(\/tmp\/headlenss-uploads\/([a-zA-Z0-9._-]+))/g,
+    (_match, _full: string, filename: string) => `![](/api/uploads/${filename})`,
+  );
+}
 
 export function ChatView({
   sessionName,
@@ -28,6 +41,8 @@ export function ChatView({
   const lastLenRef = useRef(0);
   const userScrolledUpRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   // 表示は server + pending を順に並べる(pending は常に末尾、ts 順)
   const displayChat = useMemo(() => {
@@ -148,6 +163,52 @@ export function ChatView({
     }
   };
 
+  // 画像をサーバにアップロード → 取得した path を `@path ` 形式でカーソル位置に挿入。
+  // Claude Code は `@/path/to/file.png` で画像を読み込める(v2.1.121+ で自動圧縮)。
+  const insertAtCursor = useCallback((text: string) => {
+    const ta = inputRef.current;
+    setInput((prev) => {
+      if (!ta) return prev + text;
+      const start = ta.selectionStart ?? prev.length;
+      const end = ta.selectionEnd ?? prev.length;
+      const next = prev.slice(0, start) + text + prev.slice(end);
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          const pos = start + text.length;
+          inputRef.current.setSelectionRange(pos, pos);
+          inputRef.current.focus();
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const handleImageFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const f of files) {
+        try {
+          const r = await uploadImage(f);
+          insertAtCursor(`@${r.path} `);
+        } catch (e) {
+          setError(`アップロード失敗 (${f.name}): ${(e as Error).message}`);
+        }
+      }
+    } finally {
+      setUploading(false);
+    }
+  }, [insertAtCursor]);
+
+  const onPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = extractImagesFromClipboard(e.clipboardData.items);
+    if (images.length > 0) {
+      e.preventDefault();
+      await handleImageFiles(images);
+    }
+  }, [handleImageFiles]);
+
   // textarea の高さを行数に合わせて伸ばす。max-height は CSS 側で打ち、
   // 越えた分は overflow-y: auto でスクロール。input が空になったら 1 行に戻す。
   useEffect(() => {
@@ -222,7 +283,7 @@ export function ChatView({
                       },
                     }}
                   >
-                    {m.text}
+                    {inlineUploadedImages(m.text)}
                   </ReactMarkdown>
                 </div>
               </div>
@@ -235,12 +296,36 @@ export function ChatView({
         className="chat-input"
         onSubmit={(e) => { e.preventDefault(); void send(); }}
       >
+        <button
+          type="button"
+          className="chat-attach"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="画像を添付"
+          title="画像を添付 (ペーストもOK)"
+          disabled={uploading}
+        >
+          📎
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files) {
+              void handleImageFiles(filterImageFiles(e.target.files));
+            }
+            e.target.value = '';
+          }}
+        />
         <textarea
           ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="メッセージを入力 (Enterで送信、Shift+Enterで改行)"
+          onPaste={onPaste}
+          placeholder={uploading ? 'アップロード中…' : 'メッセージを入力 (Enterで送信、Shift+Enterで改行、画像はペースト可)'}
           rows={1}
           disabled={sending}
         />

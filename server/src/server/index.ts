@@ -4,8 +4,11 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { WebSocketServer } from 'ws';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { captureOutput, createSession, killSession, listSessions, sendKeys } from './tmux.ts';
 import { handlePtyConnection } from './pty.ts';
 import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './asr/index.ts';
@@ -97,6 +100,94 @@ app.post('/api/sessions/:name/input', async (c) => {
 });
 
 app.route('/api', claudeRouter);
+
+// ───────── 画像アップロード (Web UI → Claude Code) ─────────
+//
+// 来たバイナリを tmp に保存して path を返すだけ。形式チェックや圧縮は Claude Code 側に任せる。
+// (拡張子は Content-Type / X-Filename ヘッダから決める。不明なら .bin)
+const UPLOAD_DIR = resolve(tmpdir(), 'headlenss-uploads');
+const UPLOAD_TTL_MS = 60 * 60 * 1000;
+
+const MIME_TO_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/heic': 'heic',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+};
+
+async function ensureUploadDir(): Promise<void> {
+  await mkdir(UPLOAD_DIR, { recursive: true });
+}
+
+async function cleanupOldUploads(): Promise<void> {
+  try {
+    const files = await readdir(UPLOAD_DIR);
+    const now = Date.now();
+    for (const f of files) {
+      try {
+        const p = resolve(UPLOAD_DIR, f);
+        const s = await stat(p);
+        if (now - s.mtimeMs > UPLOAD_TTL_MS) await unlink(p);
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+}
+
+ensureUploadDir().catch(() => { /* ignore */ });
+setInterval(() => { void cleanupOldUploads(); }, 30 * 60 * 1000);
+
+app.post('/api/uploads', async (c) => {
+  const buf = Buffer.from(await c.req.arrayBuffer());
+  if (buf.length === 0) return c.json({ error: 'empty body' }, 400);
+  const ct = (c.req.header('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  // 拡張子の決定優先順: Content-Type → X-Filename ヘッダ → 'bin'
+  let ext = MIME_TO_EXT[ct] ?? '';
+  if (!ext) {
+    const fn = c.req.header('x-filename') ?? '';
+    const m = fn.match(/\.([a-zA-Z0-9]{1,8})$/);
+    if (m) ext = m[1].toLowerCase();
+  }
+  if (!ext) ext = 'bin';
+  await ensureUploadDir();
+  const filename = `${Date.now()}-${randomUUID()}.${ext}`;
+  const path = resolve(UPLOAD_DIR, filename);
+  await writeFile(path, buf);
+  return c.json({ path, bytes: buf.length });
+});
+
+// アップロード済画像の配信 (chat UI で `@/tmp/headlenss-uploads/...` を
+// インライン画像表示するために必要)。
+const EXT_TO_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  heic: 'image/heic',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+};
+
+app.get('/api/uploads/:filename', (c) => {
+  const filename = c.req.param('filename');
+  // path traversal 防止: filename は単一パス要素のみ許可
+  if (!/^[a-zA-Z0-9._-]+$/.test(filename) || filename.startsWith('.') || filename.includes('..')) {
+    return c.json({ error: 'invalid filename' }, 400);
+  }
+  const path = resolve(UPLOAD_DIR, filename);
+  if (!existsSync(path)) return c.json({ error: 'not found' }, 404);
+  const buf = readFileSync(path);
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  c.header('Content-Type', EXT_TO_MIME[ext] ?? 'application/octet-stream');
+  c.header('Cache-Control', 'private, max-age=3600');
+  return c.body(new Uint8Array(buf));
+});
 
 // .ehpk ダウンロード (G2 アプリ install 用)
 const EVEN_DIR = resolve(__dirname, '../../../even');

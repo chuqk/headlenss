@@ -501,6 +501,28 @@ button {
   color: rgba(255, 255, 255, 0.5);
 }
 
+/* 添付ボタン (chat の textarea 横、tmux のヘッダ) */
+.chat-attach,
+.session-attach {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 0 0.6rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.chat-attach:hover,
+.session-attach:hover {
+  border-color: var(--accent);
+}
+.chat-attach:disabled,
+.session-attach:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .terminal-container {
   flex: 1;
   background: #0e0e10;

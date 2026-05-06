@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { extractImagesFromClipboard, filterImageFiles, uploadImage } from '../uploads.ts';
 
 // 新WSプロトコル (server/pty.ts と対応):
 //   client → server: { type: 'attach', cols, rows } / { type: 'input', data } /
@@ -29,6 +30,31 @@ export function SessionView({
   const containerRef = useRef<HTMLDivElement>(null);
   // 「この画面に合わせる」ボタンが呼ぶ実体。useEffect 内で確定する。
   const refitRef = useRef<(() => void) | null>(null);
+  // PTY に文字列を送る関数の参照。ペースト/アップロードハンドラから呼ぶため。
+  const sendInputRef = useRef<((data: string) => void) | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // 画像をアップロード → 取得した path を `@path ` として PTY に流し込む。
+  // Claude Code の TUI が `@/path/to/file.png` を画像参照として解釈する。
+  const handleImageFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const f of files) {
+        try {
+          const r = await uploadImage(f);
+          sendInputRef.current?.(`@${r.path} `);
+        } catch (e) {
+          setUploadError(`アップロード失敗: ${(e as Error).message}`);
+        }
+      }
+    } finally {
+      setUploading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -94,6 +120,7 @@ export function SessionView({
         ws.send(JSON.stringify({ type: 'input', data }));
       }
     };
+    sendInputRef.current = sendInput;
     const sendResize = (cols: number, rows: number) => {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', cols, rows }));
@@ -196,6 +223,37 @@ export function SessionView({
     const ro = new ResizeObserver(() => fitAndPushSize());
     ro.observe(container);
 
+    // ペースト時に画像が含まれていたらアップロードして @path を PTY に送る。
+    // capture phase で xterm より先に拾う。テキストオンリーなら何もしないので
+    // xterm の通常ペースト動作はそのまま。
+    const onContainerPaste = (e: ClipboardEvent) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      const images = extractImagesFromClipboard(cd.items);
+      if (images.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void handleImageFiles(images);
+    };
+    container.addEventListener('paste', onContainerPaste, true);
+
+    // ドラッグ&ドロップ
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.items).some((it) => it.kind === 'file')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+      const images = filterImageFiles(e.dataTransfer.files);
+      if (images.length === 0) return;
+      e.preventDefault();
+      void handleImageFiles(images);
+    };
+    container.addEventListener('dragover', onDragOver);
+    container.addEventListener('drop', onDrop);
+
     // visualViewport.height を CSS 変数 --vvh に同期。
     // スマホでソフトウェアキーボードが出た時に xterm 表示領域をその上の可視領域だけに縮める。
     // デスクトップでは visualViewport.height = innerHeight なので影響なし。
@@ -239,6 +297,10 @@ export function SessionView({
       window.removeEventListener('focus', refit);
       document.documentElement.style.removeProperty('--vvh');
       refitRef.current = null;
+      sendInputRef.current = null;
+      container.removeEventListener('paste', onContainerPaste, true);
+      container.removeEventListener('dragover', onDragOver);
+      container.removeEventListener('drop', onDrop);
       ro.disconnect();
       if (xtermRoot) {
         xtermRoot.removeEventListener('touchstart', swallowTouch, { capture: true } as EventListenerOptions);
@@ -261,6 +323,29 @@ export function SessionView({
           ← back
         </button>
         <span className="session-title">{sessionName}</span>
+        <button
+          type="button"
+          className="session-attach"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="画像を添付"
+          title="画像を添付 (ペースト・ドラッグ&ドロップもOK)"
+          disabled={uploading}
+        >
+          📎
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files) {
+              void handleImageFiles(filterImageFiles(e.target.files));
+            }
+            e.target.value = '';
+          }}
+        />
         <button
           className="session-refit"
           onClick={() => refitRef.current?.()}
@@ -288,6 +373,7 @@ export function SessionView({
         </div>
       </header>
       <div ref={containerRef} className="terminal-container" />
+      {uploadError && <div className="chat-error">{uploadError}</div>}
     </div>
   );
 }
