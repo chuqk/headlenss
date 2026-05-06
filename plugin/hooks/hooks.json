@@ -65,6 +65,23 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:3000/api/hooks/pre-tool-use",
+            "timeout": 600,
+            "headers": {
+              "X-Tmux-Pane": "${TMUX_PANE}",
+              "X-Tmux": "${TMUX}"
+            },
+            "allowedEnvVars": ["TMUX_PANE", "TMUX"]
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "hooks": [

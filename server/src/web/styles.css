@@ -361,6 +361,248 @@ button {
   50%      { opacity: 1;    transform: scale(1.1);  }
 }
 
+/* AskUserQuestion / 許可リクエスト UI (chat-scroller の末尾に出す) */
+.chat-pending {
+  background: rgba(74, 158, 255, 0.07);
+  border: 1px solid rgba(74, 158, 255, 0.4);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chat-pending-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.chat-pending-q {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.4rem 0;
+  border-top: 1px dashed rgba(74, 158, 255, 0.2);
+}
+.chat-pending-q:first-of-type { border-top: none; padding-top: 0; }
+
+.chat-pending-header {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.7rem;
+  background: rgba(74, 158, 255, 0.18);
+  color: var(--accent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.chat-pending-qtext {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.chat-pending-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.chat-pending-option {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.chat-pending-option:hover { border-color: var(--accent); }
+.chat-pending-option.active {
+  border-color: var(--accent);
+  background: rgba(74, 158, 255, 0.18);
+}
+.chat-pending-option-label { font-weight: 500; font-size: 0.9rem; }
+.chat-pending-option-desc { font-size: 0.78rem; color: var(--muted); }
+
+.chat-pending-notes {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px; /* iOS auto-zoom 抑止 */
+  line-height: 1.4;
+  padding: 0.4rem 0.55rem;
+  resize: vertical;
+  min-height: 2rem;
+  max-height: 8rem;
+}
+.chat-pending-notes:focus { outline: none; border-color: var(--accent); }
+
+.chat-pending-tool {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.chat-pending-tool code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+.chat-pending-toolinput {
+  background: #0e0e10;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-x: auto;
+  max-height: 8rem;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-pending-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.chat-pending-submit {
+  flex: 1;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.55rem 1rem;
+  font-weight: 500;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+.chat-pending-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.chat-pending-submit.allow { background: #2e7d4f; }
+.chat-pending-submit.deny  { background: var(--danger); }
+
+/* 質問ナビ用ボタン (戻る / 次へ) */
+.chat-pending-back,
+.chat-pending-next {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.chat-pending-back:hover:not(:disabled),
+.chat-pending-next:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.chat-pending-back:disabled,
+.chat-pending-next:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chat-pending-next {
+  flex: 1;
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+/* 確認画面の各質問サマリ */
+.chat-pending-summary {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.88rem;
+}
+.chat-pending-summary-q {
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+  font-size: 0.82rem;
+}
+.chat-pending-summary-a {
+  color: var(--text);
+  font-weight: 500;
+}
+.chat-pending-summary-note {
+  color: var(--muted);
+  font-weight: normal;
+  font-size: 0.82rem;
+}
+
+/* Type something / Chat about this 用ボタン */
+.chat-pending-extra,
+.chat-pending-chat-about {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  margin-top: 0.3rem;
+}
+.chat-pending-extra:hover:not(:disabled),
+.chat-pending-chat-about:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.chat-pending-extra:disabled,
+.chat-pending-chat-about:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chat-pending-chat-about {
+  border-color: rgba(226, 85, 85, 0.4);
+  color: rgba(226, 85, 85, 0.85);
+}
+.chat-pending-chat-about:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.chat-pending-typesomething {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  padding: 0.5rem;
+  background: rgba(74, 158, 255, 0.06);
+  border: 1px solid rgba(74, 158, 255, 0.3);
+  border-radius: 5px;
+}
+.chat-pending-typesomething-label {
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+.chat-pending-cancel-type {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
+}
+.chat-pending-cancel-type:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 /* Markdown レンダー結果のスタイル。チャットバブル内に閉じ込めて
    外側のレイアウトを壊さないように。 */
 .markdown-body > :first-child { margin-top: 0; }

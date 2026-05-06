@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve as pathResolve } from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as wait } from 'node:timers/promises';
 import { detectClaudeSessions } from './process-detect.ts';
 import * as store from './store.ts';
 import { resolveTmuxSessionName } from './tmux-resolver.ts';
@@ -127,10 +128,21 @@ claudeRouter.post('/hooks/stop', async (c) => {
   return c.json({});
 });
 
+// PreToolUse hook は plugin/hooks/hooks.json で matcher: "AskUserQuestion" 限定。
+// 「両側回答対応モード」: 即時 {} を return して TUI に質問を表示させる。
+// pending を store に記録し、chat と TUI の両方から回答を受けられるようにする。
+//   - chat で回答 → respond エンドポイントが tmux send-keys で TUI に矢印+Enter を注入
+//   - TUI で直接回答 → transcript JSONL の tool_result で検出 → pending clear
 claudeRouter.post('/hooks/pre-tool-use', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as HookPayload;
+  const body = (await c.req.json().catch(() => ({}))) as HookPayload & {
+    tool_use_id?: string;
+  };
   const tmuxName = await getTmuxName(c);
-  if (!tmuxName) return c.json({});
+  const toolName = body.tool_name ?? '';
+  const toolInput = (body.tool_input ?? {}) as { questions?: AskQuestion[] };
+  const isAskQ = toolName === 'AskUserQuestion' && Array.isArray(toolInput.questions);
+  console.log(`[hook] pre-tool-use tmux=${tmuxName} tool=${toolName} isAskQ=${isAskQ} toolUseId=${body.tool_use_id ?? ''}`);
+  if (!tmuxName || !isAskQ) return c.json({});
   if (!store.getSession(tmuxName)) {
     store.upsertSession({
       ccSessionId: body.session_id ?? '',
@@ -140,37 +152,178 @@ claudeRouter.post('/hooks/pre-tool-use', async (c) => {
     });
   }
 
-  const toolName = body.tool_name ?? '';
-  const toolInput = body.tool_input ?? {};
-  const isAskQ = toolName === 'AskUserQuestion' && Array.isArray(toolInput.questions);
-
-  const pending = store.createPending(tmuxName, {
-    kind: isAskQ ? 'question' : 'permission',
+  store.createPending(tmuxName, {
+    kind: 'question',
     hookEvent: 'PreToolUse',
     toolName,
     toolInput,
-    questions: isAskQ ? toolInput.questions : undefined,
+    questions: toolInput.questions,
+    toolUseId: body.tool_use_id,
+    transcriptPath: body.transcript_path,
   });
 
-  const decision = await store.awaitPendingResolution(pending.id, PENDING_TIMEOUT_MS);
-  store.clearPending(tmuxName);
+  // transcript watcher を起動: TUI で回答された場合の検出
+  startTuiAnswerWatcher(tmuxName, body.tool_use_id ?? '', body.transcript_path ?? '');
 
-  if (decision.event === 'PreToolUse') {
-    return c.json({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: decision.permissionDecision,
-        permissionDecisionReason: decision.reason,
-      },
-    });
-  }
+  // 即時 return: TUI に質問を表示させる
   return c.json({});
 });
+
+/** AskUserQuestion の TUI に対して、選んだ option を矢印キー + Enter で注入する。
+ *
+ *  実機検証で判明した TUI 仕様:
+ *  - 単一質問: 選択肢リストのみ。Down x N で focus 移動、Enter で選択 → 即送信
+ *  - 複数質問: タブ式 UI。各質問で Down x N + Enter → 自動で次質問タブへ。
+ *    最後の質問を確定すると別途「Submit answers / Cancel」確認画面に遷移。
+ *    Submit answers がデフォルト focus なので、追加で Enter を 1 回送る。
+ *  - 「Type something」(option N+1) は文字を入力すると自由記述モードになり、
+ *    Enter で「{自由記述テキスト}」が answer として送られる。
+ *    notes 付き回答はこのモード経由で「{label}: {notes}」の形で送る。
+ *
+ *  options が見つからない場合や questions/answers の長さがミスマッチした場合はスキップ。 */
+async function sendAnswersToTui(
+  tmuxName: string,
+  answers: Array<{ question: string; option?: string; text?: string; notes?: string; answerKind?: 'predefined' | 'type-something' | 'chat-about-this' }>,
+  questions: AskQuestion[],
+): Promise<void> {
+  console.log(`[respond] sendAnswersToTui tmux=${tmuxName} answers=${answers.length}`);
+
+  // 任意の質問に「chat-about-this」が含まれていたら、その質問の TUI で
+  // 「Chat about this」を選択することで AskUserQuestion 全体が reject される。
+  // 他の質問の回答は不要なので、最初の chat-about-this を見つけたらそこで終了。
+  const chatIdx = answers.findIndex((a) => a.answerKind === 'chat-about-this');
+  if (chatIdx >= 0) {
+    const q = questions[chatIdx];
+    if (q) {
+      const predefinedCount = (q.options ?? []).length;
+      // Chat about this は Type something のさらに 1 つ下 → Down x (predefinedCount + 1)
+      console.log(`[respond] chat-about-this at q${chatIdx}: navigating to Chat about this`);
+      // chatIdx に到達するまで前の質問は predefined option 1 を Enter で素通り
+      // (実際には reject なので前の質問の選択は無視される。手っ取り早く Enter で進める。)
+      for (let qi = 0; qi < chatIdx; qi++) {
+        await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+        await wait(150);
+      }
+      for (let i = 0; i < predefinedCount + 1; i++) {
+        await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+        await wait(40);
+      }
+      await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+    }
+    console.log(`[respond] sendAnswersToTui done (chat-about-this rejected)`);
+    return;
+  }
+
+  for (let qi = 0; qi < answers.length; qi++) {
+    const a = answers[qi];
+    const q = questions[qi];
+    if (!q) { console.log(`[respond]   q${qi}: question missing, skip`); continue; }
+    const predefinedCount = (q.options ?? []).length;
+    const kind = a.answerKind ?? 'predefined';
+
+    if (kind === 'type-something') {
+      // 明示的な Type something: text を生で送る
+      const text = (a.text ?? '').trim();
+      if (!text) { console.log(`[respond]   q${qi}: type-something but text empty, skip`); continue; }
+      console.log(`[respond]   q${qi}: type-something path, text="${text.slice(0, 40)}"`);
+      for (let i = 0; i < predefinedCount; i++) {
+        await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+        await wait(40);
+      }
+      await exec('tmux', ['send-keys', '-t', tmuxName, '-l', text]);
+      await wait(80);
+      await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+    } else {
+      // predefined: notes が付いていたら Type something 経由で「{option}: {notes}」を送る、
+      // notes なしならそのまま option を選択。
+      const note = a.notes?.trim();
+      if (note) {
+        console.log(`[respond]   q${qi}: predefined+notes -> Type something path`);
+        for (let i = 0; i < predefinedCount; i++) {
+          await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+          await wait(40);
+        }
+        const textToType = `${a.option ?? ''}: ${note}`;
+        await exec('tmux', ['send-keys', '-t', tmuxName, '-l', textToType]);
+        await wait(80);
+        await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+      } else {
+        const optIdx = (q.options ?? []).findIndex((o) => o.label === a.option);
+        if (optIdx < 0) { console.log(`[respond]   q${qi}: option "${a.option ?? ''}" not found, skip`); continue; }
+        console.log(`[respond]   q${qi}: predefined optIdx=${optIdx}`);
+        for (let i = 0; i < optIdx; i++) {
+          await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+          await wait(40);
+        }
+        await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+      }
+    }
+    await wait(200);
+  }
+  if (answers.length >= 2) {
+    console.log(`[respond] multi-question: sending final Enter to confirm Submit`);
+    await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+  }
+  console.log(`[respond] sendAnswersToTui done`);
+}
+
+/** transcript JSONL を polling して、指定 tool_use_id の tool_result が現れたら pending clear。
+ *  TUI 側でユーザが直接回答した場合の自動検出用。 */
+const tuiWatchers = new Map<string, { cancel: () => void }>();
+function startTuiAnswerWatcher(tmuxName: string, toolUseId: string, transcriptPath: string): void {
+  if (!toolUseId || !transcriptPath) return;
+  // 既存 watcher があれば止める(ありえないが念のため)
+  tuiWatchers.get(tmuxName)?.cancel();
+
+  let cancelled = false;
+  const tick = async (): Promise<void> => {
+    if (cancelled) return;
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const raw = await readFile(transcriptPath, 'utf-8');
+      // tool_result with matching tool_use_id を探す
+      // JSONL なので一行ずつ。シンプルに文字列マッチで存在判定。
+      if (raw.includes(`"tool_use_id":"${toolUseId}"`) && raw.includes('"type":"tool_result"')) {
+        // より確実にするため行ごとに検証
+        for (const line of raw.split('\n')) {
+          if (!line.trim()) continue;
+          if (!line.includes(toolUseId)) continue;
+          try {
+            const obj = JSON.parse(line) as { message?: { content?: unknown } };
+            const content = obj.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (
+                  block && typeof block === 'object' &&
+                  (block as { type?: string }).type === 'tool_result' &&
+                  (block as { tool_use_id?: string }).tool_use_id === toolUseId
+                ) {
+                  console.log(`[watcher] TUI answered (tool_use_id=${toolUseId}), clearing pending for ${tmuxName}`);
+                  store.clearPending(tmuxName);
+                  cancelled = true;
+                  return;
+                }
+              }
+            }
+          } catch { /* skip malformed line */ }
+        }
+      }
+    } catch { /* file not yet readable etc */ }
+    if (!cancelled) setTimeout(tick, 500);
+  };
+  setTimeout(tick, 500);
+  tuiWatchers.set(tmuxName, { cancel: () => { cancelled = true; tuiWatchers.delete(tmuxName); } });
+}
 
 claudeRouter.post('/hooks/permission-request', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as HookPayload;
   const tmuxName = await getTmuxName(c);
+  const toolName = body.tool_name ?? '';
+  console.log(`[hook] permission-request tmux=${tmuxName} tool=${toolName} hasQs=${Array.isArray((body.tool_input as { questions?: unknown })?.questions)}`);
   if (!tmuxName) return c.json({});
+  // AskUserQuestion は PreToolUse 側で「両側回答対応モード」で扱うので、こちらでは何もしない。
+  // (両方で pending を作ると競合する)
+  if (toolName === 'AskUserQuestion') return c.json({});
   if (!store.getSession(tmuxName)) {
     store.upsertSession({
       ccSessionId: body.session_id ?? '',
@@ -180,7 +333,6 @@ claudeRouter.post('/hooks/permission-request', async (c) => {
     });
   }
 
-  const toolName = body.tool_name ?? '';
   const toolInput = body.tool_input ?? {};
   const isAskQ = toolName === 'AskUserQuestion' && Array.isArray(toolInput.questions);
 
@@ -299,12 +451,15 @@ claudeRouter.get('/claude/sessions/:tmuxName/chat', async (c) => {
 
   // hook の最新分が transcript から漏れてる可能性に備えてマージ。
   // transcript を base にして、hook側の項目を text 一致で重複排除。
+  // 最後に ts でソート: AskUserQuestion 回答の合成 user メッセージなど、
+  // transcript に存在しないが時系列上は中間に位置する項目を正しい位置に置くため。
   const seen = new Set(transcriptChat.map((m) => `${m.role}:${m.text}`));
   const merged = [...transcriptChat];
   for (const m of cleanedHookChat) {
     const key = `${m.role}:${m.text}`;
     if (!seen.has(key)) merged.push(m);
   }
+  merged.sort((a, b) => a.ts - b.ts);
 
   if (merged.length === 0 && !session) {
     return c.json({ error: 'not found' }, 404);
@@ -342,7 +497,9 @@ claudeRouter.get('/claude/sessions/:tmuxName/chat', async (c) => {
       : `(質問待ち${dots})`;
     merged.push({ role: 'assistant', text, ts: Date.now(), synthetic: true });
   }
-  return c.json({ chat: merged, status });
+  // pending (PreToolUse / PermissionRequest 待ち) も同梱して、
+  // chat UI で許可応答 / 質問回答の UI を出せるようにする。
+  return c.json({ chat: merged, status, pending: session?.pending ?? null });
 });
 
 claudeRouter.get('/claude/sessions/:tmuxName/pending', (c) => {
@@ -359,6 +516,7 @@ claudeRouter.post('/claude/sessions/:tmuxName/respond', async (c) => {
 
   const body = (await c.req.json().catch(() => null)) as RespondInput | null;
   if (!body) return c.json({ error: 'invalid body' }, 400);
+  console.log(`[respond] tmux=${tmuxName} kind=${body.kind} hookEvent=${pending.hookEvent}`);
 
   let decision: HookDecision;
   if (pending.hookEvent === 'PreToolUse') {
@@ -369,14 +527,38 @@ claudeRouter.post('/claude/sessions/:tmuxName/respond', async (c) => {
         reason: body.message,
       };
     } else if (body.kind === 'question') {
-      const summary = body.answers
-        .map((a) => `${a.question}: ${a.option}`)
-        .join(' / ');
-      decision = {
-        event: 'PreToolUse',
-        permissionDecision: 'deny',
-        reason: `User answered: ${summary}`,
-      };
+      // 「両側回答対応モード」の AskUserQuestion: hook は既に即時 return 済みで
+      // resolver が無いので、TUI にキー注入することで TUI 側の質問 UI に回答させる。
+      // TUI が回答を処理 → tool_result が transcript に書かれる → watcher が pending clear。
+      // クライアント側にはここで成功を返してすぐ pending を消したフリ(楽観表示)をする。
+      try {
+        await sendAnswersToTui(tmuxName, body.answers, pending.questions ?? []);
+      } catch (e) {
+        console.log(`[respond] sendAnswersToTui failed: ${(e as Error).message}`);
+        return c.json({ error: `failed to send keys to tmux: ${(e as Error).message}` }, 500);
+      }
+      // chat 履歴に「ユーザがこう回答した」記録を残す。
+      // chat / G2 両方の履歴で答えた内容が見えるようにするため。
+      const totalAnswers = body.answers.length;
+      const summaryLines = body.answers.map((a, i) => {
+        const head = totalAnswers > 1 ? `Q${i + 1}. ` : '';
+        const kind = a.answerKind ?? 'predefined';
+        let line: string;
+        if (kind === 'chat-about-this') {
+          line = '→ (Chat about this を選択 / 質問をキャンセル)';
+        } else if (kind === 'type-something') {
+          line = `→ (Type something) ${a.text ?? ''}`;
+        } else {
+          const note = a.notes?.trim();
+          line = `→ ${a.option ?? ''}${note ? ` (補足: ${note})` : ''}`;
+        }
+        return `${head}${a.question}\n${line}`.trim();
+      });
+      store.appendChat(tmuxName, 'user', summaryLines.join('\n\n'));
+      // pending を即 clear(楽観的)、watcher も止める
+      store.clearPending(tmuxName);
+      tuiWatchers.get(tmuxName)?.cancel();
+      return c.json({ ok: true });
     } else {
       return c.json({ error: 'invalid response kind' }, 400);
     }
@@ -389,7 +571,11 @@ claudeRouter.post('/claude/sessions/:tmuxName/respond', async (c) => {
       };
     } else if (body.kind === 'question') {
       const summary = body.answers
-        .map((a) => `${a.question}: ${a.option}`)
+        .map((a) => {
+          const base = `${a.question}: ${a.option}`;
+          const note = a.notes?.trim();
+          return note ? `${base} [${note}]` : base;
+        })
         .join(' / ');
       decision = {
         event: 'PermissionRequest',
