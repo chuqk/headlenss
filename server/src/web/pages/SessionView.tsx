@@ -162,8 +162,15 @@ export function SessionView({
             break;
           }
           case 'attached':
-            // 確定サイズで再フィット
+            // 確定サイズで即時 fit
             requestAnimationFrame(() => fitAndPushSize());
+            // モード切替直後 (chat → tmux) などで初回 screen が空 / 不完全だった
+            // ケースの保険として、少し遅らせて「⟳ fit ボタンを押したのと同じ動作」を
+            // 自動実行: fit + resize 通知 + refresh で最新画面を取り直す。
+            setTimeout(() => {
+              if (disposed) return;
+              refitRef.current?.();
+            }, 400);
             break;
           case 'exit':
             term.write(`\r\n\x1b[33m[session exited: ${msg.code}]\x1b[0m\r\n`);
