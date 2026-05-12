@@ -10,8 +10,12 @@ const DISPLAY_WIDTH = 576
 const DISPLAY_HEIGHT = 288
 const HEADER_HEIGHT = 32                                // ヘッダ (現在の phase タイトル)
 const FOOTER_HEIGHT = 40                                // フッタ (操作ガイド)
-const CONTENT_TOP = HEADER_HEIGHT
-const CONTENT_HEIGHT = DISPLAY_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT // 216
+// 左眼で main container の上端 border (1px) が裁ち落とされる現象への対策で、
+// main を MAIN_TOP_INSET px だけ下にずらす。height はその分減らし、footer の位置は変えない。
+// 3px ではまだ稀に欠ける個体差があったので 6px に拡大。
+const MAIN_TOP_INSET = 6
+const CONTENT_TOP = HEADER_HEIGHT + MAIN_TOP_INSET
+const CONTENT_HEIGHT = DISPLAY_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - MAIN_TOP_INSET // 213
 
 let bridge: EvenAppBridge | null = null
 let startupRendered = false
