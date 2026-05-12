@@ -62,13 +62,18 @@ export type HookHeaders = {
  *  chat-about-this) に対応する。default は predefined。 */
 export type QuestionAnswer = {
   question: string;
-  /** 'predefined' (省略時): option 必須、option label で予定選択肢を選ぶ。notes が
-   *    付いていれば「Type something」経由で「{option}: {notes}」を送信。
+  /** 'predefined' (省略時): option / options で予定選択肢を選ぶ。
+   *    - 単一選択: option (label 1 つ) を指定
+   *    - 複数選択 (multiSelect: true): options (label 配列) を指定
+   *    notes が付いていれば「Type something」経由で「{option}: {notes}」を送信(単一選択時のみ)。
    *  'type-something': text 必須、TUI の Type something に切り替えて text を送信。
    *  'chat-about-this': TUI の Chat about this を選んで AskUserQuestion 全体を reject。
    *    複数質問でも 1 件でもこれが含まれていたらその時点で reject される。 */
   answerKind?: 'predefined' | 'type-something' | 'chat-about-this';
+  /** 単一選択時の選んだ option label */
   option?: string;
+  /** 複数選択時の選んだ option label 配列 */
+  options?: string[];
   text?: string;
   notes?: string;
 };

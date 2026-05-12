@@ -57,9 +57,11 @@ export function ChatView({
   const [pendingInter, setPendingInter] = useState<Pending | null>(null);
   // 質問への回答種別 (predefined / type-something / chat-about-this)
   const [qKind, setQKind] = useState<Record<number, 'predefined' | 'type-something' | 'chat-about-this'>>({});
-  // predefined 用: 選んだ option の label
+  // predefined 用: 選んだ option の label (単一選択)
   const [qSelections, setQSelections] = useState<Record<number, string>>({});
-  // predefined 用: 選んだ option に添える補足メモ(任意)
+  // predefined multi-select 用: 選んだ option label の配列
+  const [qSelectionsMulti, setQSelectionsMulti] = useState<Record<number, string[]>>({});
+  // predefined 用: 選んだ option に添える補足メモ(任意。単一選択のみ)
   const [qNotes, setQNotes] = useState<Record<number, string>>({});
   // type-something 用: 自由記述テキスト
   const [qFreeText, setQFreeText] = useState<Record<number, string>>({});
@@ -120,6 +122,7 @@ export function ChatView({
               const incoming = json.pending ?? null;
               if (prev?.id !== incoming?.id) {
                 setQSelections({});
+                setQSelectionsMulti({});
                 setQNotes({});
                 setQFreeText({});
                 setQKind({});
@@ -323,6 +326,14 @@ export function ChatView({
           text: qFreeText[i] ?? '',
         };
       }
+      const multi = q.multiSelect;
+      if (multi) {
+        return {
+          question: q.question,
+          answerKind: 'predefined' as const,
+          options: qSelectionsMulti[i] ?? [],
+        };
+      }
       return {
         question: q.question,
         answerKind: 'predefined' as const,
@@ -336,15 +347,20 @@ export function ChatView({
       void respondToPending({ kind: 'question', answers });
       return;
     }
-    if (answers.some((a) =>
-      (a.answerKind === 'predefined' && !a.option) ||
-      (a.answerKind === 'type-something' && !(a.text ?? '').trim()))
-    ) {
+    if (answers.some((a) => {
+      if (a.answerKind === 'predefined') {
+        // multi-select は options 配列、single-select は option
+        if (a.options) return a.options.length === 0;
+        return !a.option;
+      }
+      if (a.answerKind === 'type-something') return !(a.text ?? '').trim();
+      return false;
+    })) {
       setError('未回答の質問があります');
       return;
     }
     void respondToPending({ kind: 'question', answers });
-  }, [pendingInter, qSelections, qNotes, qFreeText, qKind, respondToPending]);
+  }, [pendingInter, qSelections, qSelectionsMulti, qNotes, qFreeText, qKind, respondToPending]);
 
   const submitPermission = useCallback((decision: 'allow' | 'deny') => {
     void respondToPending({
@@ -454,6 +470,9 @@ export function ChatView({
             const k = qKind[i] ?? 'predefined';
             if (k === 'chat-about-this') return true;
             if (k === 'type-something') return (qFreeText[i] ?? '').trim().length > 0;
+            // predefined: multi-select は配列に 1 件以上、single-select は label がある
+            const q = pendingInter.questions?.[i];
+            if (q?.multiSelect) return (qSelectionsMulti[i] ?? []).length > 0;
             return typeof qSelections[i] === 'string' && (qSelections[i] as string).length > 0;
           };
           const allAnswered = pendingInter.questions.every((_q, i) => isAnswered(i));
@@ -478,16 +497,23 @@ export function ChatView({
                         {k === 'type-something' && (
                           <>→ <span style={{ fontStyle: 'italic' }}>(自由記述)</span> {qFreeText[qi] ?? ''}</>
                         )}
-                        {k === 'predefined' && (
-                          qSelections[qi] ? (
+                        {k === 'predefined' && (() => {
+                          const isMulti = !!q.multiSelect;
+                          if (isMulti) {
+                            const arr = qSelectionsMulti[qi] ?? [];
+                            if (arr.length === 0) return <em>(未回答)</em>;
+                            return <>→ {arr.join(', ')}</>;
+                          }
+                          if (!qSelections[qi]) return <em>(未回答)</em>;
+                          return (
                             <>
                               → {qSelections[qi]}
                               {qNotes[qi]?.trim() && (
                                 <span className="chat-pending-summary-note"> /補足: {qNotes[qi]}</span>
                               )}
                             </>
-                          ) : <em>(未回答)</em>
-                        )}
+                          );
+                        })()}
                       </div>
                     </div>
                   );
@@ -523,45 +549,64 @@ export function ChatView({
           const q = pendingInter.questions[idx];
           const kind = qKind[idx] ?? 'predefined';
           const selected = qSelections[idx];
+          const isMulti = !!q.multiSelect;
+          const multiArr = qSelectionsMulti[idx] ?? [];
           return (
             <div className="chat-pending">
               <div className="chat-pending-title">
-                Claude からの質問 ({idx + 1} / {totalQ})
+                Claude からの質問 ({idx + 1} / {totalQ}){isMulti && <span className="chat-pending-multi-badge"> 複数選択可</span>}
               </div>
               <div className="chat-pending-q">
                 {q.header && <div className="chat-pending-header">{q.header}</div>}
                 <div className="chat-pending-qtext">{q.question}</div>
 
-                {/* predefined 選択肢 (kind が type-something 中はグレーアウト) */}
+                {/* predefined 選択肢: multi-select はチェックボックス相当 / single-select は radio 相当 */}
                 <div className="chat-pending-options">
                   {(q.options ?? []).map((opt, oi) => {
-                    const active = kind === 'predefined' && selected === opt.label;
+                    const active = kind === 'predefined' && (
+                      isMulti ? multiArr.includes(opt.label) : selected === opt.label
+                    );
                     return (
                       <button
                         key={oi}
                         type="button"
-                        className={`chat-pending-option${active ? ' active' : ''}`}
+                        className={`chat-pending-option${active ? ' active' : ''}${isMulti ? ' multi' : ''}`}
                         onClick={() => {
                           setQKind((k) => ({ ...k, [idx]: 'predefined' }));
-                          setQSelections((s) => ({ ...s, [idx]: opt.label }));
-                          // 補足メモに内容があれば「次へ」を押してもらうため自動進行しない。
-                          // 空なら従来通り自動で次へ進む。
-                          if (!(qNotes[idx] ?? '').trim()) {
-                            setCurrentQIdx(idx + 1);
+                          if (isMulti) {
+                            // toggle
+                            setQSelectionsMulti((s) => {
+                              const cur = s[idx] ?? [];
+                              const next = cur.includes(opt.label)
+                                ? cur.filter((l) => l !== opt.label)
+                                : [...cur, opt.label];
+                              return { ...s, [idx]: next };
+                            });
+                            // multi-select は手動で「次へ」を押してもらう(自動進行しない)
+                          } else {
+                            setQSelections((s) => ({ ...s, [idx]: opt.label }));
+                            if (!(qNotes[idx] ?? '').trim()) {
+                              setCurrentQIdx(idx + 1);
+                            }
                           }
                         }}
                         disabled={respondingPending || kind === 'type-something'}
                       >
-                        <div className="chat-pending-option-label">{opt.label}</div>
-                        {opt.description && (
-                          <div className="chat-pending-option-desc">{opt.description}</div>
-                        )}
+                        <span className="chat-pending-option-check">
+                          {isMulti ? (active ? '☑' : '☐') : (active ? '●' : '○')}
+                        </span>
+                        <span className="chat-pending-option-body">
+                          <div className="chat-pending-option-label">{opt.label}</div>
+                          {opt.description && (
+                            <div className="chat-pending-option-desc">{opt.description}</div>
+                          )}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-                {/* 補足メモ (predefined option を選んだときに添えて送れる) */}
-                {kind !== 'type-something' && (
+                {/* 補足メモ (single-select の predefined option を選んだときに添えて送れる) */}
+                {kind !== 'type-something' && !isMulti && (
                   <textarea
                     className="chat-pending-notes"
                     placeholder="補足メモ (任意)。選んだ選択肢と一緒に Claude に届きます。"

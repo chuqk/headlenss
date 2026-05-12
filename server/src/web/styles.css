@@ -263,12 +263,27 @@ button {
 .chat-scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
+  /* 横スクロールは出さない。markdown の table / pre / 長い URL 等で内部要素が
+     親より広くなろうとした時にコンテナが横に広がるのを止める。 */
+  overflow-x: hidden;
+  /* 横パディングは 0: 吹き出しが画面左右端まで吸着できるようにするため。
+     吹き出し以外の要素 (chat-status / chat-pending / chat-error) には個別に
+     左右マージンを当てて、端から離す。 */
+  padding: 1rem 0;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+}
+
+/* 吹き出し以外の要素は端から余白を取る */
+.chat-status,
+.chat-pending,
+.chat-error,
+.chat-empty {
+  margin-left: 0.75rem;
+  margin-right: 0.75rem;
 }
 
 .chat-empty {
@@ -280,23 +295,28 @@ button {
 
 .chat-msg {
   display: flex;
-  gap: 0.6rem;
-  align-items: flex-start;
-  max-width: 100%;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 85%;
 }
 
+/* User: 画面右端に吸着 */
 .chat-msg-user {
-  flex-direction: row-reverse;
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+/* Assistant: 画面左端に吸着 (.chat-scroller の flex column で align-self が効く) */
+.chat-msg-assistant {
+  align-self: flex-start;
+  align-items: flex-start;
 }
 
 .chat-msg-role {
   font-size: 0.7rem;
   color: var(--muted);
   font-weight: 500;
-  width: 50px;
-  flex-shrink: 0;
-  padding-top: 0.55rem;
-  text-align: center;
+  padding: 0 0.4rem;
 }
 
 .chat-msg-user .chat-msg-role {
@@ -314,7 +334,6 @@ button {
   word-break: break-word;
   font-size: 0.92rem;
   line-height: 1.5;
-  max-width: calc(100% - 60px);
 }
 
 .chat-msg-user .chat-msg-bubble {
@@ -418,16 +437,43 @@ button {
   text-align: left;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 .chat-pending-option:hover { border-color: var(--accent); }
 .chat-pending-option.active {
   border-color: var(--accent);
   background: rgba(74, 158, 255, 0.18);
 }
+.chat-pending-option-check {
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.chat-pending-option.active .chat-pending-option-check {
+  color: var(--accent);
+}
+.chat-pending-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
 .chat-pending-option-label { font-weight: 500; font-size: 0.9rem; }
 .chat-pending-option-desc { font-size: 0.78rem; color: var(--muted); }
+
+.chat-pending-multi-badge {
+  font-size: 0.72rem;
+  background: rgba(74, 158, 255, 0.18);
+  color: var(--accent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.4rem;
+  font-weight: 500;
+}
 
 .chat-pending-notes {
   background: var(--bg);

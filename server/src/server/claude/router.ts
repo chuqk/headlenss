@@ -183,7 +183,7 @@ claudeRouter.post('/hooks/pre-tool-use', async (c) => {
  *  options が見つからない場合や questions/answers の長さがミスマッチした場合はスキップ。 */
 async function sendAnswersToTui(
   tmuxName: string,
-  answers: Array<{ question: string; option?: string; text?: string; notes?: string; answerKind?: 'predefined' | 'type-something' | 'chat-about-this' }>,
+  answers: Array<{ question: string; option?: string; options?: string[]; text?: string; notes?: string; answerKind?: 'predefined' | 'type-something' | 'chat-about-this' }>,
   questions: AskQuestion[],
 ): Promise<void> {
   console.log(`[respond] sendAnswersToTui tmux=${tmuxName} answers=${answers.length}`);
@@ -234,34 +234,69 @@ async function sendAnswersToTui(
       await wait(80);
       await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
     } else {
-      // predefined: notes が付いていたら Type something 経由で「{option}: {notes}」を送る、
-      // notes なしならそのまま option を選択。
-      const note = a.notes?.trim();
-      if (note) {
-        console.log(`[respond]   q${qi}: predefined+notes -> Type something path`);
+      // predefined: multi-select (options 配列) vs single-select (option) で挙動が違う。
+      const isMulti = !!q.multiSelect;
+      const selectedSet = new Set<string>(
+        a.options && a.options.length > 0
+          ? a.options
+          : a.option ? [a.option] : []
+      );
+
+      if (isMulti) {
+        // multi-select: 各 option を順に focus し、選択対象なら Enter で toggle。
+        // 全部回ったあと Type something(predefined+0)を素通り(Down)→ Submit(predefined+1)で Enter。
+        console.log(`[respond]   q${qi}: multi-select, selected=${[...selectedSet].join(',')}`);
         for (let i = 0; i < predefinedCount; i++) {
+          const lbl = (q.options ?? [])[i]?.label ?? '';
+          if (selectedSet.has(lbl)) {
+            await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+            await wait(40);
+          }
           await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
           await wait(40);
         }
-        const textToType = `${a.option ?? ''}: ${note}`;
-        await exec('tmux', ['send-keys', '-t', tmuxName, '-l', textToType]);
-        await wait(80);
+        // 今 Type something に focus。Submit に進むのは Down 1 回。
+        await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+        await wait(40);
+        // Submit で commit
         await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
       } else {
-        const optIdx = (q.options ?? []).findIndex((o) => o.label === a.option);
-        if (optIdx < 0) { console.log(`[respond]   q${qi}: option "${a.option ?? ''}" not found, skip`); continue; }
-        console.log(`[respond]   q${qi}: predefined optIdx=${optIdx}`);
-        for (let i = 0; i < optIdx; i++) {
-          await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
-          await wait(40);
+        // single-select: notes が付いていたら Type something 経由で「{option}: {notes}」を送る、
+        // notes なしならそのまま option を選択。
+        const note = a.notes?.trim();
+        if (note) {
+          console.log(`[respond]   q${qi}: predefined+notes -> Type something path`);
+          for (let i = 0; i < predefinedCount; i++) {
+            await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+            await wait(40);
+          }
+          const textToType = `${a.option ?? ''}: ${note}`;
+          await exec('tmux', ['send-keys', '-t', tmuxName, '-l', textToType]);
+          await wait(80);
+          await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
+        } else {
+          const optIdx = (q.options ?? []).findIndex((o) => o.label === a.option);
+          if (optIdx < 0) { console.log(`[respond]   q${qi}: option "${a.option ?? ''}" not found, skip`); continue; }
+          console.log(`[respond]   q${qi}: predefined optIdx=${optIdx}`);
+          for (let i = 0; i < optIdx; i++) {
+            await exec('tmux', ['send-keys', '-t', tmuxName, 'Down']);
+            await wait(40);
+          }
+          await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
         }
-        await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
       }
     }
     await wait(200);
   }
-  if (answers.length >= 2) {
-    console.log(`[respond] multi-question: sending final Enter to confirm Submit`);
+  // 最終 Review 画面の Submit answers を Enter で確定する必要があるケース:
+  //  - 複数質問
+  //  - 単一質問でも multi-select だと Review 画面が出る
+  const hasMulti = answers.some((a, i) => {
+    const q = questions[i];
+    return q?.multiSelect === true && a.answerKind !== 'chat-about-this' && a.answerKind !== 'type-something';
+  });
+  if (answers.length >= 2 || hasMulti) {
+    console.log(`[respond] final Review screen detected, sending Enter to confirm`);
     await exec('tmux', ['send-keys', '-t', tmuxName, 'Enter']);
   }
   console.log(`[respond] sendAnswersToTui done`);
@@ -549,8 +584,13 @@ claudeRouter.post('/claude/sessions/:tmuxName/respond', async (c) => {
         } else if (kind === 'type-something') {
           line = `→ (Type something) ${a.text ?? ''}`;
         } else {
+          // predefined: multi-select は options 配列、single-select は option
           const note = a.notes?.trim();
-          line = `→ ${a.option ?? ''}${note ? ` (補足: ${note})` : ''}`;
+          if (a.options && a.options.length > 0) {
+            line = `→ ${a.options.join(', ')}`;
+          } else {
+            line = `→ ${a.option ?? ''}${note ? ` (補足: ${note})` : ''}`;
+          }
         }
         return `${head}${a.question}\n${line}`.trim();
       });
