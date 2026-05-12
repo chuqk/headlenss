@@ -123,7 +123,10 @@ const STRINGS = {
   g2FootSending:    { en: 'Sending to tmux…',                              ja: 'tmuxに送信中…' },
   g2FootSetup:      { en: 'Set up on phone',                               ja: 'スマホで設定' },
   g2FootIdle:       { en: 'Tap:Rec　↑↓:Scroll　2Tap:Back',         ja: 'タップ:録音　↑↓:履歴　2タップ:戻る' },
+  g2FootIdlePending:{ en: 'Tap:Answer　↑↓:Scroll　2Tap:Back',      ja: 'タップ:応答　↑↓:履歴　2タップ:戻る' },
   g2FootCcResponse: { en: '↑↓:Pick　Tap:OK　2Tap:Cancel',          ja: '↑↓:選択　タップ:確定　2タップ:取消' },
+  g2FootCcRespMulti:{ en: '↑↓:Pick　Tap:Toggle　Submitで確定',     ja: '↑↓:選択　タップ:切替　Submitで確定' },
+  g2FootCcRespRec:  { en: 'Tap:Done　2Tap:Cancel',                  ja: 'タップ:録音終了　2タップ:取消' },
   g2NoOutput:       { en: '(no output yet)',                    ja: '(まだ出力なし)' },
 } as const
 

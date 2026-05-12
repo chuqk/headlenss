@@ -55,7 +55,17 @@ export type Pending = {
 
 export type RespondInput =
   | { kind: 'permission'; decision: 'allow' | 'deny'; message?: string }
-  | { kind: 'question'; answers: Array<{ question: string; option: string }> }
+  | {
+      kind: 'question';
+      answers: Array<{
+        question: string;
+        answerKind?: 'predefined' | 'type-something' | 'chat-about-this';
+        option?: string;       // single-select predefined
+        options?: string[];    // multi-select predefined
+        text?: string;         // type-something
+        notes?: string;
+      }>;
+    }
 
 export class HeadlenssClient {
   constructor(private base: string) {}
