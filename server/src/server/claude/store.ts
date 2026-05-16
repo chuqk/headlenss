@@ -8,8 +8,24 @@ import type {
   SessionStatus,
 } from './types.ts';
 
-const sessions = new Map<string, ClaudeSession>();
-const pendingResolvers = new Map<string, (decision: HookDecision) => void>();
+// tsx 等のローダで、`import './claude/store.ts'` と `import './store.ts'` のように
+// 同じファイルを違う相対パスで参照すると別 module instance として解決されることがある
+// (Node ESM の loader 実装依存)。
+// その結果、ファイルスコープの Map がモジュールごとに別物になり、片方で upsert したものが
+// もう片方の listSessions で見えない、というバグになる。
+// 実機で persist.ts (saveSnapshot) と claude/router.ts (/api/claude/sessions) で
+// 完全に別 instance になっていることを debug log で確認済み。
+// シングルトン化のために globalThis 経由で共有する。
+const SESSIONS_KEY = Symbol.for('headlenss.claudeStore.sessions');
+const PENDING_KEY = Symbol.for('headlenss.claudeStore.pendingResolvers');
+type GlobalRegistry = {
+  [SESSIONS_KEY]?: Map<string, ClaudeSession>;
+  [PENDING_KEY]?: Map<string, (decision: HookDecision) => void>;
+};
+const g = globalThis as unknown as GlobalRegistry;
+const sessions: Map<string, ClaudeSession> = (g[SESSIONS_KEY] ??= new Map());
+const pendingResolvers: Map<string, (decision: HookDecision) => void> =
+  (g[PENDING_KEY] ??= new Map());
 
 export function listSessions(): ClaudeSession[] {
   return Array.from(sessions.values()).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
