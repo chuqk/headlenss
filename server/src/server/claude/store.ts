@@ -43,6 +43,8 @@ export function __debugInfo(): { myInitId: string; globalInit: string | undefine
 }
 
 export function listSessions(): ClaudeSession[] {
+  // DEBUG: 誰が呼んだか + Map の現在 size をログ
+  console.log(`[store:debug] listSessions called from initId=${myInitId} sessions.size=${sessions.size} keys=${JSON.stringify([...sessions.keys()])}`);
   return Array.from(sessions.values()).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
 }
 
@@ -56,6 +58,8 @@ export function upsertSession(input: {
   tmuxSessionName: string;
   cwd: string;
 }): ClaudeSession {
+  // DEBUG
+  console.log(`[store:debug] upsertSession called from initId=${myInitId} target=${input.tmuxSessionName} sessions.size(before)=${sessions.size}`);
   const existing = sessions.get(input.tmuxSessionName);
   const now = Date.now();
   if (existing) {
