@@ -27,25 +27,21 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 
 /**
  * 許可する Origin リスト。`.env` の `ALLOWED_ORIGINS` から CSV で受ける。
- * 未指定なら localhost 系のみ許可 (= 開発者が手元で叩く想定)。
- * 他端末からアクセスさせる場合は `ALLOWED_ORIGINS=http://host.tailnet.ts.net:3000,...` のように設定する。
+ * - 未指定 → デフォルトで `*` (全 origin 許可)。普通に動かしたい人向けの opt-out 設計。
+ * - `*` を含む値 → wildcard 扱いで全 origin 許可。
+ * - 具体的な origin を列挙 → その origin だけ許可 (= CSRF 対策として絞りたい人向け)。
  */
 function parseAllowedOrigins(): string[] {
   const raw = (process.env.ALLOWED_ORIGINS ?? '').trim();
-  if (!raw) {
-    return [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173',
-    ];
-  }
+  if (!raw) return ['*'];
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 const ALLOWED_ORIGINS = parseAllowedOrigins();
+const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
 
 function isOriginAllowed(origin: string | undefined | null): boolean {
+  if (ALLOW_ALL_ORIGINS) return true;
   if (!origin) return false;
   return ALLOWED_ORIGINS.includes(origin);
 }
@@ -55,6 +51,7 @@ const app = new Hono();
 // Origin が allowlist 外なら early-return 403。
 // hono/cors だけだと「ACAO ヘッダを付けない」だけで body は処理されてしまうため、
 // `Content-Type: text/plain` の単純リクエストで preflight をスキップする CSRF が成立する。
+// `*` 指定時 (デフォルト含む) は全許可なのでこの早期 return は走らない。
 // Origin が無いリクエスト (curl, Claude Code hook plugin の HTTP 呼び出し等) はそのまま通す。
 app.use('/api/*', async (c, next) => {
   const origin = c.req.header('origin');
@@ -63,7 +60,8 @@ app.use('/api/*', async (c, next) => {
   }
   await next();
 });
-app.use('/api/*', cors({ origin: ALLOWED_ORIGINS }));
+// hono/cors は `origin: '*'` で wildcard、 string[] でリスト指定の両対応。
+app.use('/api/*', cors({ origin: ALLOW_ALL_ORIGINS ? '*' : ALLOWED_ORIGINS }));
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 
