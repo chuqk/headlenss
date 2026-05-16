@@ -52,6 +52,17 @@ function isOriginAllowed(origin: string | undefined | null): boolean {
 
 const app = new Hono();
 
+// Origin が allowlist 外なら early-return 403。
+// hono/cors だけだと「ACAO ヘッダを付けない」だけで body は処理されてしまうため、
+// `Content-Type: text/plain` の単純リクエストで preflight をスキップする CSRF が成立する。
+// Origin が無いリクエスト (curl, Claude Code hook plugin の HTTP 呼び出し等) はそのまま通す。
+app.use('/api/*', async (c, next) => {
+  const origin = c.req.header('origin');
+  if (origin && !isOriginAllowed(origin)) {
+    return c.json({ error: 'forbidden: origin not allowed' }, 403);
+  }
+  await next();
+});
 app.use('/api/*', cors({ origin: ALLOWED_ORIGINS }));
 
 app.get('/api/health', (c) => c.json({ ok: true }));
