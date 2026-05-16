@@ -20,11 +20,39 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = resolve(__dirname, '../../dist/web');
 
 const PORT = Number(process.env.PORT ?? 3000);
-const HOST = process.env.HOST ?? '0.0.0.0';
+// デフォルトはローカル限定 (127.0.0.1)。LAN/Tailscale 等から触らせるときだけ
+// 環境変数で明示的に `HOST=0.0.0.0` (もしくは特定 IP) を指定する。
+// 認証は無いので、開放するときは ALLOWED_ORIGINS と組み合わせて Origin で守ること。
+const HOST = process.env.HOST ?? '127.0.0.1';
+
+/**
+ * 許可する Origin リスト。`.env` の `ALLOWED_ORIGINS` から CSV で受ける。
+ * 未指定なら localhost 系のみ許可 (= 開発者が手元で叩く想定)。
+ * 他端末からアクセスさせる場合は `ALLOWED_ORIGINS=http://host.tailnet.ts.net:3000,...` のように設定する。
+ */
+function parseAllowedOrigins(): string[] {
+  const raw = (process.env.ALLOWED_ORIGINS ?? '').trim();
+  if (!raw) {
+    return [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173',
+    ];
+  }
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+const ALLOWED_ORIGINS = parseAllowedOrigins();
+
+function isOriginAllowed(origin: string | undefined | null): boolean {
+  if (!origin) return false;
+  return ALLOWED_ORIGINS.includes(origin);
+}
 
 const app = new Hono();
 
-app.use('/api/*', cors());
+app.use('/api/*', cors({ origin: ALLOWED_ORIGINS }));
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 
@@ -285,6 +313,14 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) =>
   console.log(`headlenss server listening:`);
   console.log(`  local:    http://${host}:${info.port}`);
   console.log(`  bound to: ${info.address}:${info.port}`);
+  console.log(`  allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
+  // bind が外向き (0.0.0.0 / :: / 100.x 等) のときは「認証なし + 他端末から見える」状態の
+  // 警告を出す。allowlist で守ってはいるが、ユーザがそれに気付かず公開していたら危ない。
+  if (info.address === '0.0.0.0' || info.address === '::') {
+    console.log(`  ⚠  HOST=${info.address} で listen 中: LAN/Tailscale 内の他端末から見えます。`);
+    console.log(`     認証は無いため、ALLOWED_ORIGINS を必ず設定するか、`);
+    console.log(`     Tailscale ACL / ファイアウォール で接続元を絞ってください。`);
+  }
   if (!existsSync(WEB_DIST)) {
     console.log(`\nweb UI not built. run \`npm run build\` (or use \`npm run dev\`).`);
   }
@@ -295,6 +331,15 @@ const wss = new WebSocketServer({ noServer: true });
 server.on('upgrade', (req, socket, head) => {
   const m = (req.url ?? '').match(/^\/api\/sessions\/([^/?#]+)\/pty/);
   if (!m) {
+    socket.destroy();
+    return;
+  }
+  // WebSocket は CORS が効かないので、Origin を allowlist で検証して弾く。
+  // ブラウザ以外 (curl 等) で Origin 無しの接続も拒否する側に倒す
+  // (G2 アプリは HTTP しか使わないので影響なし、xterm.js は Web UI から
+  //  同一 origin で開かれるので許可される)。
+  const origin = req.headers.origin;
+  if (!isOriginAllowed(origin)) {
     socket.destroy();
     return;
   }
