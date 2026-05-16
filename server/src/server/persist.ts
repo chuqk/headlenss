@@ -87,8 +87,21 @@ export async function saveSnapshot(): Promise<void> {
     console.warn(`[persist] detectClaudeSessions failed in saveSnapshot: ${(e as Error).message}`);
   }
 
+  // セッションの cwd は「起動場所を維持する」ポリシー:
+  // - 既に snapshot に記録されているセッションは、その cwd を保持する (ユーザが
+  //   pane 内で `cd` しても、起動時の場所として記録した cwd を上書きしない)。
+  // - 既存になければ (= 新規セッション) は pane_current_path をそのまま採用する。
+  // これは「test を /tmp/foo で立てて、 pane 内で cd ~ したら restart で
+  // /home/sato で復元されてしまった」というユーザ報告への対処。
+  const previousCwd = new Map<string, string>();
+  try {
+    const prev = await loadSnapshot();
+    for (const e of prev) previousCwd.set(e.tmuxSessionName, e.cwd);
+  } catch { /* ignore: 初回は空でOK */ }
+
   const sessions: SnapshotEntry[] = [];
-  for (const [name, cwd] of tmuxMap) {
+  for (const [name, currentCwd] of tmuxMap) {
+    const cwd = previousCwd.get(name) ?? currentCwd;
     sessions.push({
       tmuxSessionName: name,
       cwd,
