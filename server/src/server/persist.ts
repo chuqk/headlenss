@@ -68,9 +68,10 @@ export async function saveSnapshot(): Promise<void> {
   const tmuxMap = await readTmuxSnapshot();
   if (tmuxMap === null) return;
 
-  const claudeNames = new Set(
-    claudeStore.listSessions().map((s) => s.tmuxSessionName),
-  );
+  const claudeList = claudeStore.listSessions();
+  // DEBUG: hasClaude が false で保存される問題の調査用ログ。後で消す。
+  console.log(`[persist:debug] saveSnapshot claudeList=${JSON.stringify(claudeList.map((s) => s.tmuxSessionName))} tmuxMap=${JSON.stringify([...tmuxMap.keys()])}`);
+  const claudeNames = new Set(claudeList.map((s) => s.tmuxSessionName));
 
   const sessions: SnapshotEntry[] = [];
   for (const [name, cwd] of tmuxMap) {
