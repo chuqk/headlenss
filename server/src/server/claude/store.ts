@@ -8,43 +8,10 @@ import type {
   SessionStatus,
 } from './types.ts';
 
-// tsx 等のローダで、`import './claude/store.ts'` と `import './store.ts'` のように
-// 同じファイルを違う相対パスで参照すると別 module instance として解決されることがある
-// (Node ESM の loader 実装依存)。
-// その結果、ファイルスコープの Map がモジュールごとに別物になり、片方で upsert したものが
-// もう片方の listSessions で見えない、というバグになる。
-// 実機で persist.ts (saveSnapshot) と claude/router.ts (/api/claude/sessions) で
-// 完全に別 instance になっていることを debug log で確認済み。
-// シングルトン化のために globalThis 経由で共有する。
-const SESSIONS_KEY = Symbol.for('headlenss.claudeStore.sessions');
-const PENDING_KEY = Symbol.for('headlenss.claudeStore.pendingResolvers');
-const INIT_KEY = Symbol.for('headlenss.claudeStore.initId');
-type GlobalRegistry = {
-  [SESSIONS_KEY]?: Map<string, ClaudeSession>;
-  [PENDING_KEY]?: Map<string, (decision: HookDecision) => void>;
-  [INIT_KEY]?: string;
-};
-const g = globalThis as unknown as GlobalRegistry;
-const sessions: Map<string, ClaudeSession> = (g[SESSIONS_KEY] ??= new Map());
-const pendingResolvers: Map<string, (decision: HookDecision) => void> =
-  (g[PENDING_KEY] ??= new Map());
-// DEBUG: 各 module instance が同じ globalThis を見ているか確認するため、初回 init を記録。
-const myInitId = randomUUID().slice(0, 8);
-if (!g[INIT_KEY]) g[INIT_KEY] = myInitId;
-console.log(`[store:debug] module init this=${myInitId} globalInit=${g[INIT_KEY]} sessions.size=${sessions.size} globalThisKeys=${Object.getOwnPropertySymbols(globalThis).length}`);
-
-export function __debugInfo(): { myInitId: string; globalInit: string | undefined; sessionsSize: number; sessionsKeys: string[] } {
-  return {
-    myInitId,
-    globalInit: g[INIT_KEY],
-    sessionsSize: sessions.size,
-    sessionsKeys: [...sessions.keys()],
-  };
-}
+const sessions = new Map<string, ClaudeSession>();
+const pendingResolvers = new Map<string, (decision: HookDecision) => void>();
 
 export function listSessions(): ClaudeSession[] {
-  // DEBUG: 誰が呼んだか + Map の現在 size をログ
-  console.log(`[store:debug] listSessions called from initId=${myInitId} sessions.size=${sessions.size} keys=${JSON.stringify([...sessions.keys()])}`);
   return Array.from(sessions.values()).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
 }
 
@@ -58,8 +25,6 @@ export function upsertSession(input: {
   tmuxSessionName: string;
   cwd: string;
 }): ClaudeSession {
-  // DEBUG
-  console.log(`[store:debug] upsertSession called from initId=${myInitId} target=${input.tmuxSessionName} sessions.size(before)=${sessions.size}`);
   const existing = sessions.get(input.tmuxSessionName);
   const now = Date.now();
   if (existing) {

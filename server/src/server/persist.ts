@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import * as claudeStore from './claude/store.ts';
+import { detectClaudeSessions } from './claude/process-detect.ts';
 import { createSession } from './tmux.ts';
 
 const exec = promisify(execFile);
@@ -68,11 +69,23 @@ export async function saveSnapshot(): Promise<void> {
   const tmuxMap = await readTmuxSnapshot();
   if (tmuxMap === null) return;
 
-  const claudeList = claudeStore.listSessions();
-  // DEBUG: hasClaude が false で保存される問題の調査用ログ。後で消す。
-  const dbg = claudeStore.__debugInfo();
-  console.log(`[persist:debug] saveSnapshot claudeList=${JSON.stringify(claudeList.map((s) => s.tmuxSessionName))} tmuxMap=${JSON.stringify([...tmuxMap.keys()])} debugInfo=${JSON.stringify(dbg)}`);
-  const claudeNames = new Set(claudeList.map((s) => s.tmuxSessionName));
+  // claude code が動いている tmux セッションの集合を作る。
+  // 2 系統を OR でマージする:
+  //   1) claudeStore.listSessions() ─ プラグインの hook (SessionStart 等) で登録されたもの
+  //   2) detectClaudeSessions() ─ ~/.claude/sessions/ レジストリから検出されたもの (hook が
+  //      何らかの理由で届かない時のフォールバック。/api/claude/sessions も同じ 2 系統マージ)
+  // 1 だけだと、tmux pane 内で `claude` を手動起動して plugin の hook が届かない場合
+  // hasClaude=false で保存されて restart 越しに claude が再起動されない、というバグになる
+  // (実機で再現確認済)。
+  const claudeNames = new Set<string>(
+    claudeStore.listSessions().map((s) => s.tmuxSessionName),
+  );
+  try {
+    const detected = await detectClaudeSessions();
+    for (const d of detected) claudeNames.add(d.tmuxSessionName);
+  } catch (e) {
+    console.warn(`[persist] detectClaudeSessions failed in saveSnapshot: ${(e as Error).message}`);
+  }
 
   const sessions: SnapshotEntry[] = [];
   for (const [name, cwd] of tmuxMap) {
