@@ -70,7 +70,8 @@ export async function saveSnapshot(): Promise<void> {
 
   const claudeList = claudeStore.listSessions();
   // DEBUG: hasClaude が false で保存される問題の調査用ログ。後で消す。
-  console.log(`[persist:debug] saveSnapshot claudeList=${JSON.stringify(claudeList.map((s) => s.tmuxSessionName))} tmuxMap=${JSON.stringify([...tmuxMap.keys()])}`);
+  const dbg = claudeStore.__debugInfo();
+  console.log(`[persist:debug] saveSnapshot claudeList=${JSON.stringify(claudeList.map((s) => s.tmuxSessionName))} tmuxMap=${JSON.stringify([...tmuxMap.keys()])} debugInfo=${JSON.stringify(dbg)}`);
   const claudeNames = new Set(claudeList.map((s) => s.tmuxSessionName));
 
   const sessions: SnapshotEntry[] = [];

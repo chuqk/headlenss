@@ -18,14 +18,29 @@ import type {
 // シングルトン化のために globalThis 経由で共有する。
 const SESSIONS_KEY = Symbol.for('headlenss.claudeStore.sessions');
 const PENDING_KEY = Symbol.for('headlenss.claudeStore.pendingResolvers');
+const INIT_KEY = Symbol.for('headlenss.claudeStore.initId');
 type GlobalRegistry = {
   [SESSIONS_KEY]?: Map<string, ClaudeSession>;
   [PENDING_KEY]?: Map<string, (decision: HookDecision) => void>;
+  [INIT_KEY]?: string;
 };
 const g = globalThis as unknown as GlobalRegistry;
 const sessions: Map<string, ClaudeSession> = (g[SESSIONS_KEY] ??= new Map());
 const pendingResolvers: Map<string, (decision: HookDecision) => void> =
   (g[PENDING_KEY] ??= new Map());
+// DEBUG: 各 module instance が同じ globalThis を見ているか確認するため、初回 init を記録。
+const myInitId = randomUUID().slice(0, 8);
+if (!g[INIT_KEY]) g[INIT_KEY] = myInitId;
+console.log(`[store:debug] module init this=${myInitId} globalInit=${g[INIT_KEY]} sessions.size=${sessions.size} globalThisKeys=${Object.getOwnPropertySymbols(globalThis).length}`);
+
+export function __debugInfo(): { myInitId: string; globalInit: string | undefined; sessionsSize: number; sessionsKeys: string[] } {
+  return {
+    myInitId,
+    globalInit: g[INIT_KEY],
+    sessionsSize: sessions.size,
+    sessionsKeys: [...sessions.keys()],
+  };
+}
 
 export function listSessions(): ClaudeSession[] {
   return Array.from(sessions.values()).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
