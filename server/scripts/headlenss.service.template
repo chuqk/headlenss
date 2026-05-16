@@ -12,9 +12,18 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+# stop / restart 時に main process だけ SIGTERM して、cgroup 内の他プロセス
+# (tmux サーバを `systemd-run --scope` で外に出す前のフォールバックや、
+#  exec の子プロセス) を巻き添えにしない。
+# 注: tmux 自体は HEADLENSS_TMUX_WRAPPER=systemd-run --user --scope ... で
+# そもそも別 cgroup に追い出す前提だが、二段構えで安全側に倒す。
+KillMode=mixed
 
 # Make sure tmux sessions created by the server share the user's default tmux server
 Environment=PATH={{PATH}}
+# tmux サーバを headlenss.service の cgroup から外して起動するラッパー。
+# `.env` で上書きできる。
+Environment=HEADLENSS_TMUX_WRAPPER=systemd-run --user --scope --quiet --collect --
 
 [Install]
 WantedBy=default.target

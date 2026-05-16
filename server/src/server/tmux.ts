@@ -23,6 +23,22 @@ export type Session = {
 
 const NAME_RE = /^[a-zA-Z0-9_-]{1,40}$/;
 
+/**
+ * tmux new-session の前置ラッパー (`.env` の HEADLENSS_TMUX_WRAPPER から
+ * 空白区切りで読む)。systemd 環境では
+ *   HEADLENSS_TMUX_WRAPPER="systemd-run --user --scope --quiet --collect --"
+ * のように指定すると、tmux サーバが headlenss.service の cgroup から外れ、
+ * systemctl restart で巻き添えにならない (= 今回の事故の根本対策)。
+ * 未指定なら従来通り直接 tmux を起動する (macOS 等の非 systemd 環境向け)。
+ */
+function getTmuxWrapper(): { cmd: string; args: string[] } | null {
+  const raw = (process.env.HEADLENSS_TMUX_WRAPPER ?? '').trim();
+  if (!raw) return null;
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  return { cmd: parts[0], args: parts.slice(1) };
+}
+
 export function validateName(name: string): void {
   if (!NAME_RE.test(name)) {
     throw new Error('invalid session name (use [a-zA-Z0-9_-], max 40 chars)');
@@ -106,7 +122,13 @@ export async function createSession(
     }
   }
 
-  await exec('tmux', ['new-session', '-d', '-c', targetCwd, '-s', name], { cwd: targetCwd });
+  const wrapper = getTmuxWrapper();
+  const tmuxArgs = ['new-session', '-d', '-c', targetCwd, '-s', name];
+  if (wrapper) {
+    await exec(wrapper.cmd, [...wrapper.args, 'tmux', ...tmuxArgs], { cwd: targetCwd });
+  } else {
+    await exec('tmux', tmuxArgs, { cwd: targetCwd });
+  }
   await configureSessionForHeadless(name);
 
   if (options.startClaude) {
