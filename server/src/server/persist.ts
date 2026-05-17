@@ -71,7 +71,15 @@ async function readTmuxSnapshot(): Promise<Map<string, string> | null> {
  * 現在の tmux 状態 + claude セッション情報をスナップショットファイルに書き出す。
  * tmux 異常時は既存ファイルを上書きしない (空で潰さない)。書き込みは tmp → rename で原子化。
  */
+// restoreSessions 完了までは saveSnapshot を no-op にする。
+// 起動直後、 restore が直列で createSession していく最中に並列 POST が来ると、
+// readTmuxSnapshot は「復元途中の tmux 状態」を読んで、未復元 entry が消えた snapshot で
+// 上書きしてしまう (scenario s15 で再現確認済の race)。
+// restore 完了までは save を全部 skip して既存 snapshot を保持する。
+let restoreInProgress = true;
+
 export async function saveSnapshot(): Promise<void> {
+  if (restoreInProgress) return;
   const tmuxMap = await readTmuxSnapshot();
   if (tmuxMap === null) return;
 
@@ -152,6 +160,15 @@ async function loadSnapshot(): Promise<SnapshotEntry[]> {
  * 個別の失敗は warn ログを出して次へ進む。
  */
 export async function restoreSessions(): Promise<void> {
+  try {
+    await restoreSessionsImpl();
+  } finally {
+    // restore 完了後にだけ saveSnapshot が動くようにする。 並列 POST race の対策。
+    restoreInProgress = false;
+  }
+}
+
+async function restoreSessionsImpl(): Promise<void> {
   const entries = await loadSnapshot();
   if (entries.length === 0) {
     console.log('[persist] no snapshot to restore');
