@@ -54,7 +54,13 @@ async function readTmuxSnapshot(): Promise<Map<string, string> | null> {
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? '';
     if (stderr.includes('no server running') || stderr.includes('error connecting')) {
-      return new Map();
+      // tmux サーバ無し: 「pristine 状態 (= snapshot を空に上書き)」と「persist の対象である
+      // 稼働中のサーバが一時的に落ちた状態」が区別できないため、安全側に倒して null を返す
+      // (= 今回の save は skip し既存 snapshot を保持)。
+      // 真に「セッション 0 件」を反映したい場合は API DELETE が個別に save を走らせる
+      // (= tmux server が稼働している正常経路) ので、ここで空 Map を返す必要はない。
+      // この設計を変えるまで、s5-tmux-dead-no-clobber の再発防止になる。
+      return null;
     }
     console.warn(`[persist] tmux list-panes failed: ${(err as Error).message}`);
     return null;
