@@ -266,6 +266,11 @@ button {
   /* 横スクロールは出さない。markdown の table / pre / 長い URL 等で内部要素が
      親より広くなろうとした時にコンテナが横に広がるのを止める。 */
   overflow-x: hidden;
+  /* 画像など子要素から「チャット表示領域の高さの N%」を参照できるよう
+     container query 用のコンテキストにする。chat-scroller 自身は flex:1 で
+     確定サイズを持つので size コンテナにできる。 */
+  container-type: size;
+  container-name: chat-scroller;
   /* 横パディングは 0: 吹き出しが画面左右端まで吸着できるようにするため。
      吹き出し以外の要素 (chat-status / chat-pending / chat-error) には個別に
      左右マージンを当てて、端から離す。 */
@@ -332,6 +337,10 @@ button {
      pre-wrap だと <ul> 内の改行テキストノードが行高さ分の余白を作ってリストが
      ガタガタになる。改行は remark-breaks プラグインで <br> に変換。 */
   word-break: break-word;
+  /* word-break だけだと iOS Safari でインライン <code> (padding/background あり)
+     が破れず親の overflow-x:hidden で右端見切れになる。anywhere を併記して
+     長いコード片や URL も強制的に折り返す。 */
+  overflow-wrap: anywhere;
   font-size: 0.92rem;
   line-height: 1.5;
 }
@@ -707,6 +716,12 @@ button {
   padding: 0.1em 0.35em;
   border-radius: 3px;
 }
+/* インライン <code> は親の overflow-wrap が継承されないケース (Safari) があるので
+   明示。pre 内の code はブロック側で overflow-x:auto しているので除外。 */
+.markdown-body :not(pre) > code {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 
 .markdown-body pre {
   margin: 0.5em 0;
@@ -731,7 +746,15 @@ button {
 }
 
 .markdown-body img {
+  /* 幅は吹き出し幅まで、高さはチャット表示領域の 30% まで。
+     どちらも max-* で押さえて width/height は auto に任せれば
+     アスペクト比は維持される (intrinsic ratio が使われる)。
+     cqh は .chat-scroller (container-name: chat-scroller) の高さ基準。
+     vh フォールバックを先に書いて、対応ブラウザでは後勝ちで cqh が効く。 */
   max-width: 100%;
+  max-height: 30vh;
+  max-height: 30cqh;
+  width: auto;
   height: auto;
   border-radius: 4px;
   display: block;

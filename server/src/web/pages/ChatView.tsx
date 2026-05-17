@@ -226,11 +226,18 @@ export function ChatView({
     }
   }, [input, sending, sessionName]);
 
+  // スマホ等のタッチデバイスでは Enter を送信に使わない (PC キーボードと違い
+  // ソフトキーボードでは改行入力に Enter を使うのが自然)。pointer: coarse で
+  // 判定: タッチ主体のデバイスのみ true。物理キーボード接続のタブレットなど
+  // 例外はあるが、送信ボタンが常にあるので機能的には支障なし。
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void send();
-    }
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+    const isTouch =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(pointer: coarse)').matches;
+    if (isTouch) return; // 改行扱い (preventDefault しない)
+    e.preventDefault();
+    void send();
   };
 
   // 画像をサーバにアップロード → 取得した path を `@path ` 形式でカーソル位置に挿入。
@@ -762,7 +769,7 @@ export function ChatView({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder={uploading ? 'アップロード中…' : 'メッセージを入力 (Enterで送信、Shift+Enterで改行、画像はペースト可)'}
+          placeholder={uploading ? 'アップロード中…' : 'メッセージを入力 (PCはEnter送信/Shift+Enter改行、スマホは送信ボタン)'}
           rows={1}
           disabled={sending}
         />
