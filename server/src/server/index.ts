@@ -15,6 +15,7 @@ import { getBackendName, isAsrReady, transcribePcm16, transcribeWav } from './as
 import { claudeRouter } from './claude/router.ts';
 import { detectClaudeSessions } from './claude/process-detect.ts';
 import * as claudeStore from './claude/store.ts';
+import { restoreSessions, saveSnapshot, startPeriodicSnapshot } from './persist.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = resolve(__dirname, '../../dist/web');
@@ -86,6 +87,8 @@ app.post('/api/sessions', async (c) => {
       cwd: typeof body.cwd === 'string' && body.cwd.trim() ? body.cwd.trim() : undefined,
       startClaude: body.startClaude === true,
     });
+    // 直近の tmux 状態をスナップショットに反映 (再起動越しの復元に効く)
+    void saveSnapshot();
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
@@ -99,6 +102,7 @@ app.delete('/api/sessions/:name', async (c) => {
     // hook 経由で記録された Claude セッションエントリも合わせて削除する。
     // これをやらないと /api/claude/sessions に死んだ tmux セッションが残り続ける。
     claudeStore.removeSession(name);
+    void saveSnapshot();
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: (e as Error).message }, 400);
@@ -333,6 +337,16 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) =>
   if (!existsSync(WEB_DIST)) {
     console.log(`\nweb UI not built. run \`npm run build\` (or use \`npm run dev\`).`);
   }
+  // バックグラウンドで前回スナップショットを復元 → 定期スナップショットを開始。
+  // serve コールバックをブロックしたくないので fire-and-forget。
+  void (async () => {
+    try {
+      await restoreSessions();
+    } catch (e) {
+      console.warn(`[persist] restoreSessions threw: ${(e as Error).message}`);
+    }
+    startPeriodicSnapshot();
+  })();
 });
 
 const wss = new WebSocketServer({ noServer: true });
