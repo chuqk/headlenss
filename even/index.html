@@ -182,33 +182,76 @@
             <span id="serverProbeText" class="probe muted small" data-i18n="unset">未確認</span>
           </label>
           <label class="row">
-            <span data-i18n="smApiKey">Speechmatics API key</span>
+            <span><a class="brand-link" href="https://portal.speechmatics.com/" target="_blank" rel="noopener noreferrer">Speechmatics</a> API key</span>
             <input id="smApiKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
           </label>
-
-          <details class="advanced">
-            <summary data-i18n="advanced">Advanced</summary>
-            <div class="advanced-body">
-              <label class="row inline">
-                <input id="submitOnSend" type="checkbox" />
-                <span data-i18n="submitOnSend">送信後に Enter を打つ (即実行)</span>
-              </label>
-              <div class="row-2col">
-                <label class="row">
-                  <span data-i18n="smLang">言語</span>
-                  <input id="smLang" type="text" placeholder="ja" />
-                </label>
-                <label class="row">
-                  <span data-i18n="smOperating">operating_point</span>
-                  <select id="smOperatingPoint">
-                    <option value="enhanced">enhanced</option>
-                    <option value="standard">standard</option>
-                  </select>
-                </label>
-              </div>
-              <button id="resetOnboardingBtn" type="button" class="link-btn" data-i18n="resetSetup">セットアップをやり直す</button>
-            </div>
-          </details>
+          <label class="row">
+            <span data-i18n="smLang">言語</span>
+            <select id="smLang">
+              <option value="ar">Arabic (ar)</option>
+              <option value="ba">Bashkir (ba)</option>
+              <option value="eu">Basque (eu)</option>
+              <option value="be">Belarusian (be)</option>
+              <option value="bn">Bengali (bn)</option>
+              <option value="bg">Bulgarian (bg)</option>
+              <option value="yue">Cantonese (yue)</option>
+              <option value="ca">Catalan (ca)</option>
+              <option value="hr">Croatian (hr)</option>
+              <option value="cs">Czech (cs)</option>
+              <option value="da">Danish (da)</option>
+              <option value="nl">Dutch (nl)</option>
+              <option value="en">English (en)</option>
+              <option value="eo">Esperanto (eo)</option>
+              <option value="et">Estonian (et)</option>
+              <option value="fi">Finnish (fi)</option>
+              <option value="fr">French (fr)</option>
+              <option value="gl">Galician (gl)</option>
+              <option value="de">German (de)</option>
+              <option value="el">Greek (el)</option>
+              <option value="he">Hebrew (he)</option>
+              <option value="hi">Hindi (hi)</option>
+              <option value="hu">Hungarian (hu)</option>
+              <option value="id">Indonesian (id)</option>
+              <option value="ia">Interlingua (ia)</option>
+              <option value="ga">Irish (ga)</option>
+              <option value="it">Italian (it)</option>
+              <option value="ja">Japanese (ja)</option>
+              <option value="ko">Korean (ko)</option>
+              <option value="lv">Latvian (lv)</option>
+              <option value="lt">Lithuanian (lt)</option>
+              <option value="ms">Malay (ms)</option>
+              <option value="mt">Maltese (mt)</option>
+              <option value="cmn">Mandarin (cmn)</option>
+              <option value="mr">Marathi (mr)</option>
+              <option value="mn">Mongolian (mn)</option>
+              <option value="no">Norwegian (no)</option>
+              <option value="fa">Persian (fa)</option>
+              <option value="pl">Polish (pl)</option>
+              <option value="pt">Portuguese (pt)</option>
+              <option value="ro">Romanian (ro)</option>
+              <option value="ru">Russian (ru)</option>
+              <option value="sk">Slovakian (sk)</option>
+              <option value="sl">Slovenian (sl)</option>
+              <option value="es">Spanish (es)</option>
+              <option value="sw">Swahili (sw)</option>
+              <option value="sv">Swedish (sv)</option>
+              <option value="ta">Tamil (ta)</option>
+              <option value="th">Thai (th)</option>
+              <option value="tr">Turkish (tr)</option>
+              <option value="uk">Ukrainian (uk)</option>
+              <option value="ur">Urdu (ur)</option>
+              <option value="ug">Uyghur (ug)</option>
+              <option value="vi">Vietnamese (vi)</option>
+              <option value="cy">Welsh (cy)</option>
+            </select>
+          </label>
+          <label class="row">
+            <span data-i18n="smOperating">operating_point</span>
+            <select id="smOperatingPoint">
+              <option value="enhanced">enhanced</option>
+              <option value="standard">standard</option>
+            </select>
+          </label>
         </div>
       </details>
 

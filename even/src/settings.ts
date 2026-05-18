@@ -11,7 +11,6 @@ export type OperatingPoint = 'standard' | 'enhanced'
 export type Settings = {
   serverBaseUrl: string
   sessionName: string
-  submitOnSend: boolean
   speechmaticsApiKey: string
   speechmaticsLang: string
   speechmaticsOperatingPoint: OperatingPoint
@@ -21,7 +20,6 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   serverBaseUrl: '',
   sessionName: 'master',
-  submitOnSend: true,
   speechmaticsApiKey: '',
   speechmaticsLang: 'ja',
   speechmaticsOperatingPoint: 'enhanced',
@@ -36,7 +34,6 @@ function parse(json: string | null | undefined): Settings | null {
     return {
       serverBaseUrl: typeof raw.serverBaseUrl === 'string' ? raw.serverBaseUrl : DEFAULT_SETTINGS.serverBaseUrl,
       sessionName: typeof raw.sessionName === 'string' && raw.sessionName ? raw.sessionName : DEFAULT_SETTINGS.sessionName,
-      submitOnSend: typeof raw.submitOnSend === 'boolean' ? raw.submitOnSend : DEFAULT_SETTINGS.submitOnSend,
       speechmaticsApiKey: typeof raw.speechmaticsApiKey === 'string' ? raw.speechmaticsApiKey : '',
       speechmaticsLang: typeof raw.speechmaticsLang === 'string' && raw.speechmaticsLang ? raw.speechmaticsLang : DEFAULT_SETTINGS.speechmaticsLang,
       speechmaticsOperatingPoint:

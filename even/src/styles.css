@@ -222,6 +222,14 @@ body {
 }
 .external-link:hover { background: #2a2a32; border-color: #3a3a44; }
 .external-link:active { transform: scale(0.99); }
+
+/* インラインの外部リンク (ラベル内の "Speechmatics" 等) */
+.brand-link {
+  color: #93b8ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.brand-link:hover { text-decoration: none; }
 .external-link-label {
   font-weight: 600;
   font-size: 0.95rem;
@@ -634,27 +642,6 @@ details.card > summary::-webkit-details-marker { display: none; }
 details.card[open] > summary { border-bottom: 1px solid var(--border); }
 .settings-body { padding: 8px 14px 14px; }
 
-details.advanced {
-  margin-top: 6px;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-}
-details.advanced > summary {
-  cursor: pointer;
-  list-style: none;
-  font-size: 0.85rem;
-  color: var(--muted);
-  padding: 6px 0;
-}
-details.advanced > summary::-webkit-details-marker { display: none; }
-details.advanced > summary::before {
-  content: "▸ ";
-  display: inline-block;
-  transition: transform 0.15s;
-}
-details.advanced[open] > summary::before { transform: rotate(90deg); }
-.advanced-body { padding-top: 6px; }
-
 label.row {
   display: flex;
   flex-direction: column;
@@ -669,11 +656,6 @@ label.row.inline {
 label.row > span:first-child {
   font-size: 0.82rem;
   color: var(--muted);
-}
-.row-2col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
 }
 .probe { margin-top: 2px; min-height: 1.1em; }
 .probe.ok { color: var(--ok); }

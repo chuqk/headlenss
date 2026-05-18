@@ -85,11 +85,9 @@ const clearHistoryBtn = document.getElementById('clearHistoryBtn') as HTMLButton
 const settingsDetails = document.getElementById('settingsDetails') as HTMLDetailsElement
 const serverUrlEl = document.getElementById('serverUrl') as HTMLInputElement
 const serverProbeText = document.getElementById('serverProbeText') as HTMLSpanElement
-const submitOnSendEl = document.getElementById('submitOnSend') as HTMLInputElement
 const smApiKeyEl = document.getElementById('smApiKey') as HTMLInputElement
-const smLangEl = document.getElementById('smLang') as HTMLInputElement
+const smLangEl = document.getElementById('smLang') as HTMLSelectElement
 const smOperatingPointEl = document.getElementById('smOperatingPoint') as HTMLSelectElement
-const resetOnboardingBtn = document.getElementById('resetOnboardingBtn') as HTMLButtonElement
 
 const pendingSection = document.getElementById('pendingSection') as HTMLElement
 const pendingTextEl = document.getElementById('pendingText') as HTMLDivElement
@@ -100,10 +98,12 @@ const tmuxOutputEl = document.getElementById('tmuxOutput') as HTMLPreElement
 const reloadOutputBtn = document.getElementById('reloadOutputBtn') as HTMLButtonElement
 
 // Claude セッション一覧 (WebView)
+const claudeSessionsCardEl = document.getElementById('claudeSessionsCard') as HTMLDetailsElement
 const claudeSessionsListEl = document.getElementById('claudeSessionsList') as HTMLUListElement
 const reloadClaudeBtn = document.getElementById('reloadClaudeBtn') as HTMLButtonElement
 
 // 新規 Claude セッション
+const newClaudeSessionCardEl = document.getElementById('newClaudeSessionCard') as HTMLElement
 const newClaudeForm = document.getElementById('newClaudeSessionForm') as HTMLFormElement
 const newClaudeNameEl = document.getElementById('newClaudeName') as HTMLInputElement
 const newClaudeCwdEl = document.getElementById('newClaudeCwd') as HTMLInputElement
@@ -136,6 +136,7 @@ const SCROLL_ANIM_TICK_MS = 10         // スクロールアニメーション: 
 const CHAT_WRAP_WIDTH = 56             // 全角28文字相当の視覚カラム幅 (ASCII=1, CJK等=2 でカウント)
 const CC_POLL_INTERVAL_MS = 1500       // Claude sessions / chat / pending のポーリング間隔
 const ROOT_LIST_VISIBLE = 7            // G2 root 画面に同時表示するセッション数 (8 行送ると容量超えでスクロールバーが出るため 7 に絞る)
+const CC_LIST_VISIBLE = 7              // cc-response 画面に同時表示する行数 (rootlist と揃える)
 
 type HistoryEntry = {
   id: number
@@ -176,6 +177,7 @@ let scrollAnimPending = 0  // アニメーションでまだ消化していな�
 let scrollAnimTimer: ReturnType<typeof setTimeout> | null = null
 let rootCursor = 0    // rootlist 内のカーソル位置 (claudeSessions[index])
 let rootListStart = 0 // rootlist 表示窓の先頭 index。カーソル追従方式で cursor が窓外に出た時だけスライドする
+let ccListStart = 0   // cc-response 画面の表示窓の先頭行 index (rootlist と同じカーソル追従方式)
 
 // 「最後に開いてから何か動いた」を未読として rootlist に印を出す仕組み。
 // セッション名 → 最後に既読化した unix ms。idle 中はポーリングごとに現在
@@ -339,12 +341,12 @@ function buildG2Content(): string {
     if (formatted.length > 0) {
       // pending があるなら 1 行目に notice
       const notice = claudePending
-        ? (claudePending.kind === 'question' ? '? 質問待ち (clickで回答)' : '⏸ 承認待ち (clickで応答)')
+        ? (claudePending.kind === 'question' ? t('noticeQuestion') : t('noticePermission'))
         : null
       const window = chatWindow(formatted, CHAT_DISPLAY_LINES - (notice ? 1 : 0))
       return notice ? [notice, ...window].join('\n') : window.join('\n')
     }
-    return `[${settings.sessionName || 'no session'}]\n(まだ発言なし)`
+    return `[${settings.sessionName || 'no session'}]\n${t('chatNoMsg')}`
   }
 
   // Claude Code 承認/質問 待ちへの応答画面
@@ -359,9 +361,9 @@ function buildG2Content(): string {
     if (liveTranscript) {
       lines.push('▌ ' + liveTranscript)
     } else if (!recordingReady) {
-      lines.push('▌ 接続中…')
+      lines.push('▌ ' + t('recConnecting'))
     } else {
-      lines.push('▌ 録音開始 — お話しください')
+      lines.push('▌ ' + t('recStartedHint'))
     }
   } else if (phase === 'finalizing') {
     // 接続中など PCM が乗る前に停止すると liveTranscript は空のまま finalize に入る。
@@ -407,9 +409,7 @@ function tailLines(text: string, n: number): string {
 function buildRootListView(): string {
   const items = claudeSessions
   if (items.length === 0) {
-    return getLanguage() === 'en'
-      ? '(no Claude Code session)\n\nStart `claude` inside a tmux session'
-      : '(Claude Code が動いている tmux が無い)\n\ntmux 内で `claude` を起動してください'
+    return t('rootListEmpty')
   }
   const total = items.length
 
@@ -438,17 +438,23 @@ function buildRootListView(): string {
 function buildCcResponseView(): string {
   if (!claudePending) return '(no pending)'
   const lines: string[] = []
+  // 「カーソル行に対応する全行配列上の index」と「最初のカーソル可能行の index」を記録。
+  // 最後のスクロール窓計算で、カーソルが最初の選択肢に戻ったらヘッダから見せるために使う。
+  let cursorLineIdx = -1
+  let firstCursorLineIdx = -1
   if (claudePending.kind === 'permission') {
-    lines.push(`⏸ ${claudePending.toolName} の承認`)
+    lines.push(t('approveTool').replace('{name}', claudePending.toolName))
     lines.push('')
     const summary = summarizeToolInput(claudePending.toolInput).slice(0, CHAT_WRAP_WIDTH * 3)
     if (summary) lines.push(summary)
     lines.push('')
     const opts = ['Allow', 'Deny']
     for (let i = 0; i < opts.length; i++) {
+      if (i === 0) firstCursorLineIdx = lines.length
+      if (i === respondCursor) cursorLineIdx = lines.length
       lines.push((i === respondCursor ? '▶ ' : '  ') + opts[i])
     }
-    return lines.join('\n')
+    return applyCcScrollWindow(lines, cursorLineIdx, firstCursorLineIdx)
   }
   // question kind: 複数質問対応
   const questions = claudePending.questions ?? []
@@ -458,7 +464,7 @@ function buildCcResponseView(): string {
   if (!q) return '(question is empty)'
   // ヘッダ: 質問番号と質問本文
   const head = totalQ > 1 ? `? (${respondQIdx + 1}/${totalQ}) ` : '? '
-  const multiBadge = q.multiSelect ? ' [複数]' : ''
+  const multiBadge = q.multiSelect ? t('multiBadge') : ''
   lines.push(head + q.question.slice(0, CHAT_WRAP_WIDTH - 12) + multiBadge)
   lines.push('')
   // 行構成: predefined options → (multi のみ) Submit → Type something → Chat about this
@@ -474,25 +480,58 @@ function buildCcResponseView(): string {
       const sel = builtAnswer?.kind === 'predefined' ? builtAnswer.option : undefined
       check = sel === opts[i].label ? '● ' : '○ '
     }
+    if (i === 0) firstCursorLineIdx = lines.length
+    if (i === respondCursor) cursorLineIdx = lines.length
     lines.push(`${marker} ${check}${opts[i].label}`)
   }
   let extraIdx = opts.length
   if (q.multiSelect) {
     const m = extraIdx === respondCursor ? '▶' : ' '
-    lines.push(`${m} > Submit (確定)`)
+    if (extraIdx === respondCursor) cursorLineIdx = lines.length
+    lines.push(`${m} ${t('submitOption')}`)
     extraIdx++
   }
   {
     const m = extraIdx === respondCursor ? '▶' : ' '
     const built = builtAnswer?.kind === 'type-something' ? builtAnswer.text : ''
-    lines.push(`${m} T Type something${built ? ` (${built.slice(0, 16)}…)` : '(音声入力)'}`)
+    if (extraIdx === respondCursor) cursorLineIdx = lines.length
+    lines.push(`${m} T Type something${built ? ` (${built.slice(0, 16)}…)` : t('voiceInputBadge')}`)
     extraIdx++
   }
   {
     const m = extraIdx === respondCursor ? '▶' : ' '
+    if (extraIdx === respondCursor) cursorLineIdx = lines.length
     lines.push(`${m} C Chat about this`)
   }
-  return lines.join('\n')
+  return applyCcScrollWindow(lines, cursorLineIdx, firstCursorLineIdx)
+}
+
+/**
+ * cc-response 画面の表示窓計算。全行が CC_LIST_VISIBLE 以下ならそのまま返す。
+ * 超えたら rootlist と同じ「カーソル追従窓スライド」を適用 (cursor が窓外に出た時だけ最小限スライド)。
+ * ただしカーソルが最初の選択肢にある場合は窓を 0 に戻し、ヘッダ(質問本文)が見えるようにする。
+ */
+function applyCcScrollWindow(lines: string[], cursorLineIdx: number, firstCursorLineIdx: number): string {
+  const total = lines.length
+  if (total <= CC_LIST_VISIBLE) {
+    ccListStart = 0
+    return lines.join('\n')
+  }
+  // カーソル位置がない場合 (受動的な表示) は末尾追従
+  if (cursorLineIdx < 0) {
+    ccListStart = total - CC_LIST_VISIBLE
+    return lines.slice(ccListStart, ccListStart + CC_LIST_VISIBLE).join('\n')
+  }
+  // カーソルが最初の選択肢に居る間はヘッダから見せたいので 0 にスナップ
+  if (cursorLineIdx <= firstCursorLineIdx) {
+    ccListStart = 0
+  } else if (cursorLineIdx < ccListStart) {
+    ccListStart = cursorLineIdx
+  } else if (cursorLineIdx >= ccListStart + CC_LIST_VISIBLE) {
+    ccListStart = cursorLineIdx - CC_LIST_VISIBLE + 1
+  }
+  ccListStart = Math.max(0, Math.min(ccListStart, total - CC_LIST_VISIBLE))
+  return lines.slice(ccListStart, ccListStart + CC_LIST_VISIBLE).join('\n')
 }
 
 /** 現在質問の行数(predefined + Submit (multiのみ) + Type something + Chat about this) */
@@ -746,15 +785,15 @@ async function refreshG2(force = false): Promise<void> {
 function renderSessionPills(): void {
   sessionPillsEl.innerHTML = ''
   if (!settings.serverBaseUrl) {
-    sessionPillsEl.innerHTML = '<div class="muted small">Server URL を設定してください</div>'
+    sessionPillsEl.innerHTML = `<div class="muted small">${escapeHtml(t('pillSetServerUrl'))}</div>`
     return
   }
   if (!serverProbeOk) {
-    sessionPillsEl.innerHTML = `<div class="muted small">サーバ未接続: ${escapeHtml(serverErrorMsg) || '?'}</div>`
+    sessionPillsEl.innerHTML = `<div class="muted small">${escapeHtml(t('pillServerDownPfx'))}${escapeHtml(serverErrorMsg) || '?'}</div>`
     return
   }
   if (lastSessions.length === 0) {
-    sessionPillsEl.innerHTML = '<div class="muted small">セッション無し。下から作成</div>'
+    sessionPillsEl.innerHTML = `<div class="muted small">${escapeHtml(t('pillNoSessions'))}</div>`
     return
   }
   for (const s of lastSessions) {
@@ -976,7 +1015,7 @@ function addHistoryEntry(entry: Omit<HistoryEntry, 'id' | 'timestamp'>): void {
 
 function renderHistory(): void {
   if (history.length === 0) {
-    historyListEl.innerHTML = '<li class="muted small">(まだ送信していません)</li>'
+    historyListEl.innerHTML = `<li class="muted small">${escapeHtml(t('noHistory'))}</li>`
     return
   }
   historyListEl.innerHTML = ''
@@ -1014,7 +1053,6 @@ setInterval(renderHistory, 60_000)
 // ─── Settings UI ───────────────────────────────────────────────────────
 function renderSettings(): void {
   serverUrlEl.value = settings.serverBaseUrl
-  submitOnSendEl.checked = settings.submitOnSend
   smApiKeyEl.value = settings.speechmaticsApiKey
   smLangEl.value = settings.speechmaticsLang
   smOperatingPointEl.value = settings.speechmaticsOperatingPoint
@@ -1035,11 +1073,6 @@ serverUrlEl.addEventListener('input', () => {
   scheduleProbe()
 })
 
-submitOnSendEl.addEventListener('change', () => {
-  settings.submitOnSend = submitOnSendEl.checked
-  void persistSettings()
-})
-
 smApiKeyEl.addEventListener('change', () => {
   settings.speechmaticsApiKey = smApiKeyEl.value.trim()
   void persistSettings()
@@ -1047,9 +1080,8 @@ smApiKeyEl.addEventListener('change', () => {
 })
 
 smLangEl.addEventListener('change', () => {
-  const v = smLangEl.value.trim() || DEFAULT_SETTINGS.speechmaticsLang
+  const v = smLangEl.value || DEFAULT_SETTINGS.speechmaticsLang
   settings.speechmaticsLang = v
-  smLangEl.value = v
   void persistSettings()
 })
 
@@ -1061,7 +1093,7 @@ smOperatingPointEl.addEventListener('change', () => {
 
 function scheduleProbe(): void {
   if (probeDebounceTimer) clearTimeout(probeDebounceTimer)
-  setProbeText('busy', '確認中…')
+  setProbeText('busy', t('probeChecking'))
   probeDebounceTimer = setTimeout(() => {
     probeDebounceTimer = null
     void probeServer()
@@ -1077,12 +1109,12 @@ async function probeServer(): Promise<void> {
   if (!settings.serverBaseUrl) {
     serverProbeOk = false
     serverErrorMsg = 'unset'
-    setProbeText('muted', '未設定')
+    setProbeText('muted', t('unset'))
     renderSessionPills()
     recomputePhase()
     return
   }
-  setProbeText('busy', '確認中…')
+  setProbeText('busy', t('probeChecking'))
   try {
     const res = await client.health()
     if (res.ok) {
@@ -1103,6 +1135,7 @@ async function probeServer(): Promise<void> {
   } finally {
     renderSessionPills()
     recomputePhase()
+    renderClaudeSessionsList()
   }
 }
 
@@ -1131,7 +1164,7 @@ function setObProbe(kind: 'ok' | 'err' | 'busy' | 'muted', text: string): void {
 
 async function obProbe(url: string): Promise<void> {
   obNext1Btn.disabled = true
-  setObProbe('busy', '確認中…')
+  setObProbe('busy', t('probeChecking'))
   const tmp = new HeadlenssClient(url)
   try {
     const res = await tmp.health()
@@ -1140,7 +1173,7 @@ async function obProbe(url: string): Promise<void> {
     setObProbe('ok', `OK · ${sessions.length} session${sessions.length === 1 ? '' : 's'}`)
     obNext1Btn.disabled = false
   } catch (e) {
-    setObProbe('err', `接続できません: ${(e as Error).message}`)
+    setObProbe('err', `${t('probeUnreachablePfx')}${(e as Error).message}`)
     obNext1Btn.disabled = true
   }
 }
@@ -1148,12 +1181,12 @@ async function obProbe(url: string): Promise<void> {
 obServerUrlEl.addEventListener('input', () => {
   const url = obServerUrlEl.value.trim()
   if (!url) {
-    setObProbe('muted', 'URL を入れると自動で確認します')
+    setObProbe('muted', t('ob1ProbeIdle'))
     obNext1Btn.disabled = true
     return
   }
   if (obProbeTimer) clearTimeout(obProbeTimer)
-  setObProbe('busy', '入力中…')
+  setObProbe('busy', t('probeTyping'))
   obProbeTimer = setTimeout(() => {
     obProbeTimer = null
     void obProbe(url)
@@ -1207,16 +1240,6 @@ function isConfigured(s: Settings): boolean {
   return Boolean(s.serverBaseUrl && s.speechmaticsApiKey)
 }
 
-resetOnboardingBtn.addEventListener('click', () => {
-  obServerUrlEl.value = settings.serverBaseUrl
-  obSmKeyEl.value = settings.speechmaticsApiKey
-  obFinishBtn.disabled = !settings.speechmaticsApiKey
-  setObProbe('muted', '確認中…')
-  showOnboardingStep(1)
-  setView('onboarding')
-  if (settings.serverBaseUrl) void obProbe(settings.serverBaseUrl)
-})
-
 // ─── Recording → RT → tmux ─────────────────────────────────────────────
 function startRecordingTimer(): void {
   stopRecordingTimer()
@@ -1254,7 +1277,7 @@ function updateRecordButton(): void {
   }
   if (phase === 'pending') {
     recordBtn.disabled = true
-    recordBtn.textContent = '↑送信 / ↓破棄'
+    recordBtn.textContent = t('recBtnPending')
     recordBtn.classList.remove('recording')
     return
   }
@@ -1473,7 +1496,7 @@ async function confirmAndSend(): Promise<void> {
   try {
     await client.sendKeys(settings.sessionName, {
       text,
-      submit: settings.submitOnSend,
+      submit: true,
     })
     log(`sendKeys ok → ${settings.sessionName} (${pendingSentences.length} sentences)`)
     addHistoryEntry({
@@ -1828,6 +1851,11 @@ function claudeStatusLabel(status: string): string {
 
 function renderClaudeSessionsList(): void {
   if (!claudeSessionsListEl) return
+  // サーバへ疎通していない(=実質「未認証」)間は Claude 関連 UI ごと隠す。
+  // サーバ疎通が前提のフォーム/一覧をクリックできても何もできないので。
+  const hideClaude = !serverProbeOk
+  if (claudeSessionsCardEl) claudeSessionsCardEl.hidden = hideClaude
+  if (newClaudeSessionCardEl) newClaudeSessionCardEl.hidden = hideClaude
   // summary に件数バッジ
   const countEl = document.getElementById('claudeSessionsCount')
   if (countEl) countEl.textContent = serverProbeOk ? `(${claudeSessions.length})` : ''
@@ -1992,7 +2020,7 @@ async function submitNewClaudeSession(e: Event): Promise<void> {
     const startedAt = Date.now()
     const POLL_TIMEOUT_MS = 12000
     let appeared = false
-    setNewClaudeStatus('busy', `${t('newClaudeStarting')} (検出中…)`)
+    setNewClaudeStatus('busy', `${t('newClaudeStarting')} ${t('newClaudeDetecting')}`)
     while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
       await new Promise((r) => setTimeout(r, 500))
       await reloadClaudeSessions()
@@ -2011,7 +2039,7 @@ async function submitNewClaudeSession(e: Event): Promise<void> {
     } else {
       // tmux session 自体は作成済みだが Claude の registry 登録が遅れているケース。
       // 一覧に出るのは遅延するが処理は成功扱いとする。
-      setNewClaudeStatus('ok', `${t('newClaudeOk')} (${name}) — Claude 検出待ち`)
+      setNewClaudeStatus('ok', `${t('newClaudeOk')} (${name}) ${t('newClaudeWaitDetect')}`)
       log(`Claude session "${name}" not yet registered after ${POLL_TIMEOUT_MS}ms — keep polling in background`)
     }
     newClaudeNameEl.value = ''
@@ -2104,12 +2132,14 @@ async function changeLanguage(lang: Language): Promise<void> {
   setLanguage(lang)
   applyTranslations()
   refreshLangSelectorLabel()
-  // ステータスバー / Pending UI / 履歴の表示文字列も即時更新
+  // ステータスバー / Pending UI / 履歴 / セッションピル / Claude 一覧の表示文字列も即時更新
   paintStatus()
   updateRecordButton()
   updatePendingUI()
   renderSettings()
   renderHistory()
+  renderSessionPills()
+  renderClaudeSessionsList()
   setProbeText('muted', t('unset'))
   if (settings.serverBaseUrl) {
     // probe text を再計算するために軽く呼び直し

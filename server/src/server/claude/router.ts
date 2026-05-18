@@ -527,9 +527,9 @@ claudeRouter.get('/claude/sessions/:tmuxName/chat', async (c) => {
   if (status !== 'idle') {
     const dots = '.'.repeat((Math.floor(Date.now() / 500) % 3) + 1);
     const text =
-      status === 'busy' ? `(考え中${dots})`
-      : status === 'waiting-permission' ? `(許可待ち${dots})`
-      : `(質問待ち${dots})`;
+      status === 'busy' ? `(thinking${dots})`
+      : status === 'waiting-permission' ? `(awaiting permission${dots})`
+      : `(awaiting question${dots})`;
     merged.push({ role: 'assistant', text, ts: Date.now(), synthetic: true });
   }
   // pending (PreToolUse / PermissionRequest 待ち) も同梱して、

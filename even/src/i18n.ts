@@ -29,6 +29,35 @@ const STRINGS = {
   // ─── Top bar ─────────────────────────────────────────────────
   sessionLabel:   { en: '→ session',                            ja: '→ session' },
 
+  // ─── Session pills (status messages) ─────────────────────────
+  pillSetServerUrl:    { en: 'Set Server URL',                  ja: 'Server URL を設定してください' },
+  pillServerDownPfx:   { en: 'Server unreachable: ',            ja: 'サーバ未接続: ' },
+  pillNoSessions:      { en: 'No sessions. Create one below.',  ja: 'セッション無し。下から作成' },
+
+  // ─── Probe (server URL check) ────────────────────────────────
+  probeChecking:       { en: 'Checking…',                       ja: '確認中…' },
+  probeUnreachablePfx: { en: "Can't connect: ",                 ja: '接続できません: ' },
+  probeTyping:         { en: 'Typing…',                         ja: '入力中…' },
+
+  // ─── G2 recording state ──────────────────────────────────────
+  recConnecting:       { en: 'Connecting…',                     ja: '接続中…' },
+  recStartedHint:      { en: 'Recording — please speak',        ja: '録音開始 — お話しください' },
+  chatNoMsg:           { en: '(no messages yet)',               ja: '(まだ発言なし)' },
+  noticeQuestion:      { en: '? Question waiting (tap to answer)',    ja: '? 質問待ち (clickで回答)' },
+  noticePermission:    { en: '⏸ Permission waiting (tap to respond)', ja: '⏸ 承認待ち (clickで応答)' },
+  rootListEmpty:       { en: '(no Claude Code session)\n\nStart `claude` inside a tmux session',
+                         ja: '(Claude Code が動いている tmux が無い)\n\ntmux 内で `claude` を起動してください' },
+
+  // ─── G2 cc-response (approve / answer) ───────────────────────
+  approveTool:         { en: '⏸ Approve {name}',                ja: '⏸ {name} の承認' },
+  multiBadge:          { en: ' [multi]',                        ja: ' [複数]' },
+  submitOption:        { en: '> Submit',                        ja: '> Submit (確定)' },
+  voiceInputBadge:     { en: '(voice input)',                   ja: '(音声入力)' },
+
+  // ─── New Claude session detection ────────────────────────────
+  newClaudeDetecting:  { en: '(detecting…)',                    ja: '(検出中…)' },
+  newClaudeWaitDetect: { en: '— Awaiting Claude detection',     ja: '— Claude 検出待ち' },
+
   // ─── Claude Sessions list ────────────────────────────────────
   claudeSessionsHead:    { en: 'Claude sessions',               ja: 'Claude セッション' },
   claudeSessionsEmpty:   { en: '(no Claude sessions)',          ja: '(Claude セッションなし)' },
@@ -69,12 +98,8 @@ const STRINGS = {
   settingsTitle:  { en: '⚙ Settings',                           ja: '⚙ 設定' },
   serverUrl:      { en: 'Server URL',                           ja: 'Server URL' },
   smApiKey:       { en: 'Speechmatics API key',                 ja: 'Speechmatics API key' },
-  advanced:       { en: 'Advanced',                             ja: '詳細設定' },
-  submitOnSend:   { en: 'Press Enter after sending (auto-execute)',
-                    ja: '送信後に Enter を打つ (即実行)' },
   smLang:         { en: 'Language',                             ja: '言語' },
   smOperating:    { en: 'operating_point',                      ja: 'operating_point' },
-  resetSetup:     { en: 'Re-run setup',                         ja: 'セットアップをやり直す' },
   unset:          { en: '(unset)',                              ja: '未設定' },
   toastUrlCopied: { en: 'URL copied. Open it in your browser.', ja: 'URL をコピーしました。ブラウザで開いてください。' },
   toastUrlCopyFail:{ en: 'Failed to copy. URL: ',               ja: 'コピーに失敗。URL: ' },
@@ -125,7 +150,7 @@ const STRINGS = {
   g2FootIdle:       { en: 'Tap:Rec　↑↓:Scroll　2Tap:Back',         ja: 'タップ:録音　↑↓:履歴　2タップ:戻る' },
   g2FootIdlePending:{ en: 'Tap:Answer　↑↓:Scroll　2Tap:Back',      ja: 'タップ:応答　↑↓:履歴　2タップ:戻る' },
   g2FootCcResponse: { en: '↑↓:Pick　Tap:OK　2Tap:Cancel',          ja: '↑↓:選択　タップ:確定　2タップ:取消' },
-  g2FootCcRespMulti:{ en: '↑↓:Pick　Tap:Toggle　Submitで確定',     ja: '↑↓:選択　タップ:切替　Submitで確定' },
+  g2FootCcRespMulti:{ en: '↑↓:Pick　Tap:Toggle & Submit',          ja: '↑↓:選択　タップ:切替　Submitで確定' },
   g2FootCcRespRec:  { en: 'Tap:Done　2Tap:Cancel',                  ja: 'タップ:録音終了　2タップ:取消' },
   g2NoOutput:       { en: '(no output yet)',                    ja: '(まだ出力なし)' },
 } as const
