@@ -270,7 +270,7 @@ curl -X POST -H 'content-type: audio/wav' \
   - リサイズ: JSON `{"type":"resize","cols":80,"rows":24}`
 - **サーバー→クライアント**: PTY出力をそのまま流す (テキスト/バイナリ両方ありうる)
 
-セッション名は `[a-zA-Z0-9_-]` の最大40文字。WS接続時にセッションが存在しなければ自動作成 (`tmux new-session -A`)。
+セッション名は `[a-zA-Z0-9_-]` の最大40文字。WS接続時にセッションが存在しなければ WebSocket を close code `4404` で切る (旧来の自動作成は snapshot 復元と race して cwd が HOME に巻き戻る事故が出たため廃止)。新規作成は明示的に `POST /api/sessions` を叩く。
 
 ## フォルダ構成
 

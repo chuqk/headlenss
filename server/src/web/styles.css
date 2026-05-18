@@ -185,6 +185,8 @@ button {
   height: var(--vvh, 100dvh);
   display: flex;
   flex-direction: column;
+  /* .session-missing オーバーレイの absolute 配置基準 */
+  position: relative;
 }
 
 .session-header {
@@ -796,6 +798,39 @@ button {
   font-size: 0.85rem;
   border-top: 1px solid #5a2a2a;
 }
+
+/* pty WebSocket が 4404 (session not found) で閉じられた時の overlay。
+   xterm.js の terminal-container の上にオーバーレイ表示する。 */
+.session-missing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(14, 14, 16, 0.92);
+  color: #e6e6e6;
+  text-align: center;
+  padding: 1rem;
+  z-index: 10;
+}
+.session-missing p { margin: 0; }
+.session-missing code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 0.35rem;
+  border-radius: 3px;
+}
+.session-missing button {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+}
+.session-missing button:hover { background: #2a2a32; }
 
 .chat-input {
   display: flex;

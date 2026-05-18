@@ -3,7 +3,7 @@ import type { WebSocket } from 'ws';
 import { execFileSync } from 'node:child_process';
 import headlessPkg from '@xterm/headless';
 import serializePkg from '@xterm/addon-serialize';
-import { ensureSession, validateName } from './tmux.ts';
+import { requireSession, SessionNotFoundError, validateName } from './tmux.ts';
 
 // @xterm/headless / addon-serialize は CJS モジュールで Terminal/SerializeAddon を default export に内包する
 const { Terminal: HeadlessTerminal } = headlessPkg as unknown as {
@@ -146,7 +146,7 @@ async function createHeadlessEntry(
   cols: number,
   rows: number,
 ): Promise<HeadlessEntry> {
-  await ensureSession(sessionName);
+  await requireSession(sessionName);
 
   // クライアント独立サイズ運用: window-size manual + resize-window
   try {
@@ -332,7 +332,12 @@ export function handlePtyConnection(ws: WebSocket, sessionName: string): void {
           applyResize(entry, cols, rows);
         }
       } catch (err) {
-        ws.close(1011, `attach failed: ${(err as Error).message}`);
+        if (err instanceof SessionNotFoundError) {
+          // クライアント (SessionView.tsx) は code 4404 を見て reconnect せずにエラー画面に切り替える
+          ws.close(4404, err.message);
+        } else {
+          ws.close(1011, `attach failed: ${(err as Error).message}`);
+        }
         return;
       }
       entry.clients.add(ws);

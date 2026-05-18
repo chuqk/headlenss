@@ -187,16 +187,30 @@ async function advanceClaudeStartup(name: string, timeoutMs = 12000): Promise<vo
   }
 }
 
-/** セッションが無ければ作る (新規作成時は headless 用に設定する) */
-export async function ensureSession(name: string): Promise<void> {
+/**
+ * 「pty WebSocket 接続時に存在しないセッションを暗黙に auto-create する」設計は、
+ * snapshot 復元と race して cwd が HOME に巻き戻る事故 (make-ss / agent の事例) の
+ * 原因になったため廃止した。新規作成は明示的な POST /api/sessions だけに集約する。
+ * pty WebSocket 経由でセッションが無い場合は `SessionNotFoundError` を throw して
+ * 呼び出し側 (handlePtyConnection) が WebSocket を 4404 で close する。
+ */
+export class SessionNotFoundError extends Error {
+  constructor(name: string) {
+    super(`tmux session "${name}" not found`);
+    this.name = 'SessionNotFoundError';
+  }
+}
+
+/** セッションが存在することを要求。無ければ SessionNotFoundError を throw (auto-create しない)。 */
+export async function requireSession(name: string): Promise<void> {
   validateName(name);
   try {
     await exec('tmux', ['has-session', '-t', name]);
-    // 既存: 念のため設定を当て直す
-    await configureSessionForHeadless(name);
   } catch {
-    await createSession(name);
+    throw new SessionNotFoundError(name);
   }
+  // 既存セッションには念のため headless 用設定を当て直す
+  await configureSessionForHeadless(name);
 }
 
 export async function killSession(name: string): Promise<void> {

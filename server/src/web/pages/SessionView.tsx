@@ -35,6 +35,9 @@ export function SessionView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // pty WebSocket がサーバから 4404 (session not found) で閉じられた時に立てる。
+  // 立つと reconnect ループを止めて「セッションが無い」UI を出す。
+  const [sessionMissing, setSessionMissing] = useState(false);
 
   // 画像をアップロード → 取得した path を `@path ` として PTY に流し込む。
   // Claude Code の TUI が `@/path/to/file.png` を画像参照として解釈する。
@@ -205,8 +208,14 @@ export function SessionView({
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (disposed) return;
+        // 4404 = サーバ側で tmux にセッションが無いと判定して閉じられた。
+        // auto-create 設計を廃止したのでこの code が来たら reconnect しない。
+        if (event.code === 4404) {
+          setSessionMissing(true);
+          return;
+        }
         term.write('\r\n\x1b[31m[disconnected — retrying…]\x1b[0m\r\n');
         reconnectTimer = setTimeout(() => { if (!disposed) openWs(); }, 1500);
       };
@@ -373,6 +382,13 @@ export function SessionView({
         </div>
       </header>
       <div ref={containerRef} className="terminal-container" />
+      {sessionMissing && (
+        <div className="session-missing">
+          <p>tmux session <code>{sessionName}</code> does not exist.</p>
+          <p>Create it from the session list page first.</p>
+          <button type="button" onClick={onBack}>← back to list</button>
+        </div>
+      )}
       {uploadError && <div className="chat-error">{uploadError}</div>}
     </div>
   );
