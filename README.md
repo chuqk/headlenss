@@ -1,35 +1,137 @@
 # headlenss
 
-Even Realities G2 スマートグラスから、母艦PC上で動くClaude Codeへ音声で指示を出し、
-出力をレンズに表示するためのプロジェクト。
+Even Realities G2 スマートグラスから、母艦PC上で動くClaude Code (および任意のtmuxセッション) を
+**音声で操作**し、出力をレンズに表示するためのプロジェクト。Tailscale越しに、スマホ/PCの
+ブラウザからもtmuxを触れるWeb UIを提供する。
 
-Tailscale越しに、PCやスマホのブラウザからもtmux/Claude Codeを操作できるWeb UIを提供する。
+> 開発中。実機 G2 + Tailscale を前提にした個人用途向けセットアップです。
 
-## このリポジトリの状態
+## できること
 
-開発中。現在は `server/` のみ実装が始まっている。
+- **G2マイクからClaude Codeへ音声指示**
+  G2のマイクで取った音声を Speechmatics Realtime API に直接ストリーミングし、確定した
+  テキストを母艦PCの tmux セッション (≒ Claude Code) に送り込む。
+- **G2レンズに tmux 画面をミラー**
+  Idle時はtmuxの画面末尾をG2レンズに2秒間隔で表示。送った指示の結果がレンズで確認できる。
+- **ブラウザから tmux/Claude Code を操作する Web UI**
+  xterm.js ベースのターミナル中継。スマホ/PC両対応のレスポンシブUI。
+  Tailscale tailnet 内の任意端末からアクセスできる。
+- **Claude Code の承認待ち・質問待ちを G2 で受ける (Claude Code プラグイン)**
+  Claude Code のライフサイクルイベント (SessionStart / UserPromptSubmit / Stop /
+  PreToolUse / PermissionRequest / SessionEnd) を母艦サーバへ転送。承認待ちなどは
+  long-poll でブロックされ、G2 から応答するとそのまま Claude Code に伝わる。
+- **Web UI からの音声文字起こし (任意)**
+  サーバ側にも ASR (whisper.cpp / AmiVoice / Speechmatics) を持っていて、Web UI から
+  手動で文字起こしできる。G2を使わない経路にも対応。
 
-## 構成
+## システム構成
 
 ```
-headlenss/
-├── server/   # 母艦PC上で動くサーバー (tmux管理API + Web UI)
-└── even/     # Even G2用アプリ (未着手)
+G2 (マイク + ディスプレイ + タッチパッド)
+  ↕ BLE 5.2
+スマホ (Even Realities アプリ = Flutter WebView)
+  └─ even/  G2用Webアプリ (TS+Vite)
+       ├─ HTTPS → Speechmatics Realtime (音声 → テキスト)
+       └─ HTTP  → 母艦PC (Tailscale経由)
+母艦PC
+  ├─ server/   Hono + tmux + Claude Code + Web UI
+  └─ plugin/   Claude Code プラグイン (hooks を server に転送)
+       ↕ HTTP/WS
+ブラウザ (スマホ/PC、Web画面)
 ```
 
 詳細な設計方針は [plan.md](./plan.md) を参照。
 
-## クイックスタート (server)
+## リポジトリ構成
 
-```bash
-cd server
-npm install
-npm run build
-npm start
+```
+headlenss/
+├── server/   # 母艦PCで動くサーバー (tmux管理API + Web UI + ASR)
+├── even/     # Even G2用アプリ (スマホWebView上で動くTS Webアプリ)
+├── plugin/   # Claude Code プラグイン (lifecycle hooks → server)
+└── plan.md   # 全体設計メモ
 ```
 
-詳細は [server/README.md](./server/README.md)。
+## 必要なもの (全体)
+
+- **母艦PC**: Node.js 20以上, tmux 3.0以上 (Linux/macOS)
+- **Tailscale アカウント** (G2やスマホから母艦に届かせるため事実上必須)
+- **Even Realities G2** + ペアリング済みスマホ + Even Realities アプリ
+  (Web UI だけ使うなら不要)
+- **Speechmatics API key** (G2側のリアルタイム文字起こし用、月480分まで無料)
+  - 取得: https://portal.speechmatics.com/
+- **Claude Code v2.1以降** (Claude Code 連携を使う場合)
+
+## 導入手順
+
+### 1. サーバーを母艦PCに入れる
+
+```bash
+git clone https://github.com/takashicompany/headlenss.git
+cd headlenss/server
+npm install
+cp .env.example .env
+# .env を編集 (ASR_BACKEND など。最低限は何も書かなくても起動はする)
+npm start
+# → http://localhost:3000/ にブラウザでアクセスして動作確認
+```
+
+Linux で常駐させたい場合は systemd unit が用意されている:
+```bash
+npm run service:install
+sudo loginctl enable-linger $USER   # ログアウト後も動かす場合のみ、初回1回
+```
+
+詳細(ASRバックエンド選択・APIリファレンス・systemd運用)は [server/README.md](./server/README.md) を参照。
+
+### 2. Tailscale で母艦にアクセスできるようにする
+
+母艦PCとG2スマホ・操作端末を同じ tailnet に入れる。`tailscale ip -4` でTailscale IPを確認。
+ブラウザから `http://<tailscale-ip>:3000/` を開けるか確認しておく。
+
+MagicDNS が有効なら `http://<hostname>.<tailnet>.ts.net:3000/` でもアクセスできる。
+
+### 3. (任意) Claude Code プラグインを入れる
+
+承認待ち・質問待ちなどを G2 や Web UI に流したい場合だけ。
+
+```
+# Claude Code 内で
+/plugin marketplace add /path/to/headlenss
+/plugin install headlenss@headlenss
+```
+
+これで以降 tmux 内で Claude Code を起動するたびに lifecycle イベントが
+`http://localhost:3000/api/hooks/*` に飛ぶ。詳細は [plugin/README.md](./plugin/README.md) を参照。
+
+### 4. (任意) G2アプリをスマホに入れる
+
+実機 G2 を使う場合のみ。
+
+```bash
+cd even
+npm install
+npm run build
+npm run pack       # headlenss.ehpk を生成
+npm run qr         # QRコードを表示
+```
+
+スマホの Even Realities アプリで QR を読み込んでインストール。
+初回起動時に WebView 内の設定画面で以下を入力する:
+
+- **Server base URL**: `http://<hostname>.<tailnet>.ts.net:3000`
+- **Speechmatics API key**
+- 送信先 tmux セッション名
+
+`even/app.json` の `network` permission whitelist に、母艦のホスト名と
+Speechmatics のエンドポイントを書く必要がある (詳細: [even/README.md](./even/README.md))。
+
+### 5. 使う
+
+- **Web UI から**: ブラウザで `http://<母艦>:3000/` を開き、tmuxセッションを作って操作。
+- **G2 から**: クリックで録音開始/停止 → 上スワイプで tmux 送信 / 下スワイプで破棄。
+  Idle中はtmux画面末尾がレンズに表示される。
 
 ## ライセンス
 
-未定 (将来OSS公開予定)。
+未定 (将来 OSS 公開予定)。プラグイン (`plugin/`) のみ MIT を宣言済み。
