@@ -1,16 +1,14 @@
-# headlenss
+# HeadLenss
 
-Even Realities G2 スマートグラスから、母艦PC上で動くClaude Code (および任意のtmuxセッション) を
-**音声で操作**し、出力をレンズに表示するためのプロジェクト。Tailscale越しに、スマホ/PCの
-ブラウザからもtmuxを触れるWeb UIを提供する。
+HeadLenss(ヘッドレンズ)は、Even Realities G2 スマートグラスから、PC上で動くClaude Codeを音声入力で操作するアプリです。
+また、スマホのブラウザからtmuxセッションをターミナルモードとチャットモードの両方で操作することが可能です。
 
-> 開発中。実機 G2 + Tailscale を前提にした個人用途向けセットアップです。
 
 ## できること
 
 - **G2マイクからClaude Codeへ音声指示**
   G2のマイクで取った音声を Speechmatics Realtime API に直接ストリーミングし、確定した
-  テキストを母艦PCの tmux セッション (≒ Claude Code) に送り込む。
+  テキストをPCの tmux セッション (≒ Claude Code) に送り込む。
 - **G2レンズに tmux 画面をミラー**
   Idle時はtmuxの画面末尾をG2レンズに2秒間隔で表示。送った指示の結果がレンズで確認できる。
 - **ブラウザから tmux/Claude Code を操作する Web UI**
@@ -32,8 +30,8 @@ G2 (マイク + ディスプレイ + タッチパッド)
 スマホ (Even Realities アプリ = Flutter WebView)
   └─ even/  G2用Webアプリ (TS+Vite)
        ├─ HTTPS → Speechmatics Realtime (音声 → テキスト)
-       └─ HTTP  → 母艦PC (Tailscale経由)
-母艦PC
+       └─ HTTP  → PC (Tailscale経由)
+PC
   ├─ server/   Hono + tmux + Claude Code + Web UI
   └─ plugin/   Claude Code プラグイン (hooks を server に転送)
        ↕ HTTP/WS
@@ -46,7 +44,7 @@ G2 (マイク + ディスプレイ + タッチパッド)
 
 ```
 headlenss/
-├── server/   # 母艦PCで動くサーバー (tmux管理API + Web UI + ASR)
+├── server/   # PCで動くサーバー (tmux管理API + Web UI + ASR)
 ├── even/     # Even G2用アプリ (スマホWebView上で動くTS Webアプリ)
 ├── plugin/   # Claude Code プラグイン (lifecycle hooks → server)
 └── plan.md   # 全体設計メモ
@@ -54,7 +52,7 @@ headlenss/
 
 ## 必要なもの (全体)
 
-- **母艦PC**: Node.js 20以上, tmux 3.0以上 (Linux/macOS)
+- **PC**: Node.js 20以上, tmux 3.0以上 (Linux/macOS)
 - **Tailscale アカウント** (G2やスマホから母艦に届かせるため事実上必須)
 - **Even Realities G2** + ペアリング済みスマホ + Even Realities アプリ
   (Web UI だけ使うなら不要)
@@ -64,7 +62,7 @@ headlenss/
 
 ## 導入手順
 
-### 1. サーバーを母艦PCに入れる
+### 1. サーバーをPCに入れる
 
 ```bash
 git clone https://github.com/takashicompany/headlenss.git
@@ -86,7 +84,7 @@ sudo loginctl enable-linger $USER   # ログアウト後も動かす場合のみ
 
 ### 2. Tailscale で母艦にアクセスできるようにする
 
-母艦PCとG2スマホ・操作端末を同じ tailnet に入れる。`tailscale ip -4` でTailscale IPを確認。
+PCとG2スマホ・操作端末を同じ tailnet に入れる。`tailscale ip -4` でTailscale IPを確認。
 ブラウザから `http://<tailscale-ip>:3000/` を開けるか確認しておく。
 
 MagicDNS が有効なら `http://<hostname>.<tailnet>.ts.net:3000/` でもアクセスできる。
