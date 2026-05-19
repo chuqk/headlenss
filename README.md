@@ -43,16 +43,13 @@ PC
 ブラウザ (スマホ/PC、Web画面)
 ```
 
-詳細な設計方針は [plan.md](./plan.md) を参照。
-
 ## リポジトリ構成
 
 ```
 headlenss/
 ├── server/   # PCで動くサーバー (tmux管理API + Web UI + ASR)
 ├── even/     # Even G2用アプリ (スマホWebView上で動くTS Webアプリ)
-├── plugin/   # Claude Code プラグイン (lifecycle hooks → server)
-└── plan.md   # 全体設計メモ
+└── plugin/   # Claude Code プラグイン (lifecycle hooks → server)
 ```
 
 ## 必要なもの (全体)
