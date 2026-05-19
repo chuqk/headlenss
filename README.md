@@ -1,141 +1,140 @@
+**English** | [日本語](./README.ja.md)
+
 # HeadLenss
 
-HeadLenss(ヘッドレンズ)は、Even Realities G2 スマートグラスから、PC上で動くClaude Codeを音声入力で操作するアプリです。
-また、スマホのブラウザからtmuxセッションをターミナルモードとチャットモードの両方で操作することが可能です。
+HeadLenss is an app that lets you drive Claude Code running on your PC by voice from Even Realities G2 smart glasses.
+It also lets you operate tmux sessions from a smartphone browser in both terminal mode and chat mode.
 
-## スクリーンショット
+## Screenshots
 
 ### G2
 
-#### コンソール画面
+#### Console
 <img width="576" height="288" alt="glasses_20260519003446_bg" src="https://github.com/user-attachments/assets/b6f32ed7-43f6-4cf2-bbd3-ff25a4e3f18c" />
 
-#### Ask User Question画面
+#### Ask User Question
 <img width="576" height="288" alt="glasses_20260518233343_bg" src="https://github.com/user-attachments/assets/1a316c79-65a2-430e-8b65-3834022d8cb9" />
 
-#### セッション一覧画面
+#### Session list
 <img width="576" height="288" alt="glasses_20260518232302_bg" src="https://github.com/user-attachments/assets/330c34e7-e457-4281-8e90-609a4ce602dc" />
 
-#### 音声入力画面
+#### Voice input
 <img width="576" height="288" alt="glasses_20260518225738_bg" src="https://github.com/user-attachments/assets/82fb73bb-6558-481d-aae5-2281116f5dc6" />
 
-### ブラウザ(スマートフォン)
+### Browser (smartphone)
 
-#### コンソールビュー
+#### Console view
 <img height="500" alt="F876E784-FCD5-4FCC-9BC5-693610810920_1_201_a" src="https://github.com/user-attachments/assets/69054435-781d-4884-9a18-99ff46ad0165" />
 
-#### チャットビュー
+#### Chat view
 <img height="500" alt="AED91246-AF99-416F-8E15-DE5DCDEDBF9F_1_201_a" src="https://github.com/user-attachments/assets/a9eba4b8-5901-4946-a6c1-07d8000f3465" />
 
-## システム構成
+## System overview
 
 ```
-G2 (マイク + ディスプレイ + タッチパッド)
+G2 (microphone + display + touchpad)
   ↕ BLE 5.2
-スマホ (Even Realities アプリ = Flutter WebView)
-  └─ even/  G2用Webアプリ (TS+Vite)
-       ├─ HTTPS → Speechmatics Realtime (音声 → テキスト)
-       └─ HTTP  → PC (Tailscale経由)
+Smartphone (Even Realities app = Flutter WebView)
+  └─ even/  G2 web app (TS + Vite)
+       ├─ HTTPS → Speechmatics Realtime (audio → text)
+       └─ HTTP  → PC (via Tailscale)
 PC
   ├─ server/   Hono + tmux + Claude Code + Web UI
-  └─ plugin/   Claude Code プラグイン (hooks を server に転送)
+  └─ plugin/   Claude Code plugin (forwards hooks to the server)
        ↕ HTTP/WS
-ブラウザ (スマホ/PC、Web画面)
+Browser (smartphone / PC, web UI)
 ```
 
-## リポジトリ構成
+## Repository layout
 
 ```
 headlenss/
-├── server/   # PCで動くサーバー (tmux管理API + Web UI + ASR)
-├── even/     # Even G2用アプリ (スマホWebView上で動くTS Webアプリ)
-└── plugin/   # Claude Code プラグイン (lifecycle hooks → server)
+├── server/   # Server running on the PC (tmux management API + Web UI + ASR)
+├── even/     # Even G2 app (TS web app running inside the smartphone WebView)
+└── plugin/   # Claude Code plugin (forwards lifecycle hooks to the server)
 ```
 
-## 必要なもの (全体)
+## Requirements
 
-- **PC**: Node.js 20以上, tmux 3.0以上 (Linux/macOS)
-- **Tailscale アカウント** (G2やスマホからPCに届かせるため事実上必須)
-- **Even Realities G2** + ペアリング済みスマホ + Even Realities アプリ
-  (Web UI だけ使うなら不要)
-- **Speechmatics API key** (G2側のリアルタイム文字起こし用、月480分まで無料)
-  - 取得: https://portal.speechmatics.com/
-- **Claude Code v2.1以降** (Claude Code 連携を使う場合)
+- **PC**: Node.js 20+, tmux 3.0+ (Linux / macOS)
+- **Tailscale account** (effectively required so the G2 / smartphone can reach the PC)
+- **Even Realities G2** + paired smartphone + Even Realities app
+  (not required if you only use the Web UI)
+- **Speechmatics API key** (for G2-side real-time transcription; free up to 480 minutes / month)
+  - Get one at: https://portal.speechmatics.com/
+- **Claude Code v2.1+** (if you want the Claude Code integration)
 
-## 導入手順
+## Setup
 
-**AIにソースコードを読んでもらってセットアップするのが楽です。**
+**The easiest path is to let an AI read the source code and walk you through setup.**
 
-### 1. サーバーをPCに入れる
+### 1. Install the server on your PC
 
 ```bash
 git clone https://github.com/takashicompany/headlenss.git
 cd headlenss/server
 npm install
 cp .env.example .env
-# .env を編集 (ASR_BACKEND など。最低限は何も書かなくても起動はする)
+# Edit .env (e.g. ASR_BACKEND). It works with the defaults too.
 npm start
-# → http://localhost:3000/ にブラウザでアクセスして動作確認
+# → open http://localhost:3000/ in a browser to verify
 ```
 
-Linux で常駐させたい場合は systemd unit が用意されている:
+To keep it running on Linux, a systemd unit is provided:
 ```bash
 npm run service:install
-sudo loginctl enable-linger $USER   # ログアウト後も動かす場合のみ、初回1回
+sudo loginctl enable-linger $USER   # only once, if you want it to survive logout
 ```
 
-詳細(ASRバックエンド選択・APIリファレンス・systemd運用)は [server/README.md](./server/README.md) を参照。
+For details (ASR backend selection, API reference, systemd operation) see [server/README.md](./server/README.md).
 
-### 2. Tailscale でPCにアクセスできるようにする
+### 2. Reach the PC via Tailscale
 
-PCとG2スマホ・操作端末を同じ tailnet に入れる。`tailscale ip -4` でTailscale IPを確認。
-ブラウザから `http://<tailscale-ip>:3000/` を開けるか確認しておく。
+Put the PC and the G2 phone / control devices into the same tailnet. Confirm the Tailscale IP with `tailscale ip -4`.
+Verify that `http://<tailscale-ip>:3000/` opens in a browser.
 
-MagicDNS が有効なら `http://<hostname>.<tailnet>.ts.net:3000/` でもアクセスできる。
+If MagicDNS is enabled, `http://<hostname>.<tailnet>.ts.net:3000/` also works.
 
-### 3. (任意) Claude Code プラグインを入れる
+### 3. (Optional) Install the Claude Code plugin
 
-承認待ち・質問待ちなどを G2 や Web UI に流したい場合だけ。
+Only if you want approval / question events from Claude Code to surface on the G2 or the Web UI.
 
 ```
-# Claude Code 内で
+# Inside Claude Code
 /plugin marketplace add /path/to/headlenss
 /plugin install headlenss@headlenss
 ```
 
-これで以降 tmux 内で Claude Code を起動するたびに lifecycle イベントが
-`http://localhost:3000/api/hooks/*` に飛ぶ。詳細は [plugin/README.md](./plugin/README.md) を参照。
+After this, every Claude Code instance launched inside tmux will forward its lifecycle events to `http://localhost:3000/api/hooks/*`. See [plugin/README.md](./plugin/README.md) for details.
 
-### 4. (任意) G2アプリをスマホに入れる
+### 4. (Optional) Install the G2 app on your smartphone
 
-実機 G2 を使う場合のみ。
+Only if you use the physical G2.
 
 ```bash
 cd even
 npm install
 npm run build
-npm run pack       # headlenss.ehpk を生成
-npm run qr         # QRコードを表示
+npm run pack       # produces headlenss.ehpk
+npm run qr         # show a QR code
 ```
 
-スマホの Even Realities アプリで QR を読み込んでインストール。
-初回起動時に WebView 内の設定画面で以下を入力する:
+Scan the QR with the Even Realities app on your phone to install it.
+On first launch, enter the following in the WebView settings:
 
 - **Server base URL**: `http://<hostname>.<tailnet>.ts.net:3000`
 - **Speechmatics API key**
-- 送信先 tmux セッション名
+- Target tmux session name
 
-`even/app.json` の `network` permission whitelist に、PCのホスト名と
-Speechmatics のエンドポイントを書く必要がある (詳細: [even/README.md](./even/README.md))。
+You also need to add your PC hostname and the Speechmatics endpoints to the `network` permission `whitelist` in `even/app.json` (see [even/README.md](./even/README.md)).
 
-### 5. 使う
+### 5. Use it
 
-- **Web UI から**: ブラウザで `http://<PCのホスト名>:3000/` を開き、tmuxセッションを作って操作。
-- **G2 から**: クリックで録音開始/停止 → 上スワイプで tmux 送信 / 下スワイプで破棄。
-  Idle中はtmux画面末尾がレンズに表示される。
+- **From the Web UI**: open `http://<PC hostname>:3000/`, create a tmux session, and operate it.
+- **From G2**: tap to start / stop recording → swipe up to send to tmux / swipe down to discard. While idle the tail of the tmux screen is mirrored on the lens.
 
-## ライセンス
+## License
 
-MIT License — 詳細は [LICENSE](./LICENSE) を参照。
+MIT License — see [LICENSE](./LICENSE).
 
-利用は自由 (商用含む) ですが、本ソフトウェアは無保証で提供されます。利用したことによる損害等について作者は一切の責任を負いません。
+You may use, modify, and distribute it freely (including for commercial purposes). The software is provided as-is with no warranty, and the author assumes no liability for any damages arising from its use.
