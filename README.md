@@ -3,6 +3,22 @@
 HeadLenss(ヘッドレンズ)は、Even Realities G2 スマートグラスから、PC上で動くClaude Codeを音声入力で操作するアプリです。
 また、スマホのブラウザからtmuxセッションをターミナルモードとチャットモードの両方で操作することが可能です。
 
+## スクリーンショット
+
+### G2
+
+#### コンソール画面
+<img width="576" height="288" alt="glasses_20260519003446_bg" src="https://github.com/user-attachments/assets/b6f32ed7-43f6-4cf2-bbd3-ff25a4e3f18c" />
+
+#### Ask User Question画面
+<img width="576" height="288" alt="glasses_20260518233343_bg" src="https://github.com/user-attachments/assets/1a316c79-65a2-430e-8b65-3834022d8cb9" />
+
+#### セッション一覧画面
+<img width="576" height="288" alt="glasses_20260518232302_bg" src="https://github.com/user-attachments/assets/330c34e7-e457-4281-8e90-609a4ce602dc" />
+
+#### 音声入力画面
+<img width="576" height="288" alt="glasses_20260518225738_bg" src="https://github.com/user-attachments/assets/82fb73bb-6558-481d-aae5-2281116f5dc6" />
+
 
 ## できること
 
