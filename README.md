@@ -19,24 +19,13 @@ HeadLenss(ヘッドレンズ)は、Even Realities G2 スマートグラスから
 #### 音声入力画面
 <img width="576" height="288" alt="glasses_20260518225738_bg" src="https://github.com/user-attachments/assets/82fb73bb-6558-481d-aae5-2281116f5dc6" />
 
+### ブラウザ(スマートフォン)
 
-## できること
+#### コンソールビュー
+<img height="500" alt="F876E784-FCD5-4FCC-9BC5-693610810920_1_201_a" src="https://github.com/user-attachments/assets/69054435-781d-4884-9a18-99ff46ad0165" />
 
-- **G2マイクからClaude Codeへ音声指示**
-  G2のマイクで取った音声を Speechmatics Realtime API に直接ストリーミングし、確定した
-  テキストをPCの tmux セッション (≒ Claude Code) に送り込む。
-- **G2レンズに tmux 画面をミラー**
-  Idle時はtmuxの画面末尾をG2レンズに2秒間隔で表示。送った指示の結果がレンズで確認できる。
-- **ブラウザから tmux/Claude Code を操作する Web UI**
-  xterm.js ベースのターミナル中継。スマホ/PC両対応のレスポンシブUI。
-  Tailscale tailnet 内の任意端末からアクセスできる。
-- **Claude Code の承認待ち・質問待ちを G2 で受ける (Claude Code プラグイン)**
-  Claude Code のライフサイクルイベント (SessionStart / UserPromptSubmit / Stop /
-  PreToolUse / PermissionRequest / SessionEnd) を母艦サーバへ転送。承認待ちなどは
-  long-poll でブロックされ、G2 から応答するとそのまま Claude Code に伝わる。
-- **Web UI からの音声文字起こし (任意)**
-  サーバ側にも ASR (whisper.cpp / AmiVoice / Speechmatics) を持っていて、Web UI から
-  手動で文字起こしできる。G2を使わない経路にも対応。
+#### チャットビュー
+<img height="500" alt="AED91246-AF99-416F-8E15-DE5DCDEDBF9F_1_201_a" src="https://github.com/user-attachments/assets/a9eba4b8-5901-4946-a6c1-07d8000f3465" />
 
 ## システム構成
 
@@ -69,7 +58,7 @@ headlenss/
 ## 必要なもの (全体)
 
 - **PC**: Node.js 20以上, tmux 3.0以上 (Linux/macOS)
-- **Tailscale アカウント** (G2やスマホから母艦に届かせるため事実上必須)
+- **Tailscale アカウント** (G2やスマホからPCに届かせるため事実上必須)
 - **Even Realities G2** + ペアリング済みスマホ + Even Realities アプリ
   (Web UI だけ使うなら不要)
 - **Speechmatics API key** (G2側のリアルタイム文字起こし用、月480分まで無料)
@@ -137,12 +126,12 @@ npm run qr         # QRコードを表示
 - **Speechmatics API key**
 - 送信先 tmux セッション名
 
-`even/app.json` の `network` permission whitelist に、母艦のホスト名と
+`even/app.json` の `network` permission whitelist に、PCのホスト名と
 Speechmatics のエンドポイントを書く必要がある (詳細: [even/README.md](./even/README.md))。
 
 ### 5. 使う
 
-- **Web UI から**: ブラウザで `http://<母艦>:3000/` を開き、tmuxセッションを作って操作。
+- **Web UI から**: ブラウザで `http://<PCのホスト名>:3000/` を開き、tmuxセッションを作って操作。
 - **G2 から**: クリックで録音開始/停止 → 上スワイプで tmux 送信 / 下スワイプで破棄。
   Idle中はtmux画面末尾がレンズに表示される。
 
