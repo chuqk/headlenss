@@ -64,6 +64,8 @@ headlenss/
 
 ## 導入手順
 
+**AIにソースコードを読んでもらってセットアップするのが楽です。**
+
 ### 1. サーバーをPCに入れる
 
 ```bash
@@ -84,7 +86,7 @@ sudo loginctl enable-linger $USER   # ログアウト後も動かす場合のみ
 
 詳細(ASRバックエンド選択・APIリファレンス・systemd運用)は [server/README.md](./server/README.md) を参照。
 
-### 2. Tailscale で母艦にアクセスできるようにする
+### 2. Tailscale でPCにアクセスできるようにする
 
 PCとG2スマホ・操作端末を同じ tailnet に入れる。`tailscale ip -4` でTailscale IPを確認。
 ブラウザから `http://<tailscale-ip>:3000/` を開けるか確認しておく。
