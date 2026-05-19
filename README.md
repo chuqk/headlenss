@@ -54,6 +54,19 @@ headlenss/
 └── plugin/   # Claude Code plugin (forwards lifecycle hooks to the server)
 ```
 
+## What It Can Do
+
+- Access Claude Code (tmux) on your PC from G2.
+- Send prompts using G2's voice input.
+- Add and view tmux sessions from a web browser. Supports both PCs and smartphones.
+- Two session display types are available: console-style and chat-style.
+
+## Differences from even-terminal
+
+- Can be launched from the menu on G2
+- Can add new sessions (via the smartphone app)
+- Control tmux via a web browser
+
 ## Requirements
 
 - **PC**: Node.js 20+, tmux 3.0+ (Linux / macOS)

@@ -54,6 +54,19 @@ headlenss/
 └── plugin/   # Claude Code プラグイン (lifecycle hooks → server)
 ```
 
+## できること
+
+- G2 から PC 上の Claude Code (tmux) にアクセスできる。
+- G2 の音声入力でプロンプトを送れる。
+- Web ブラウザから tmux セッションの追加と表示ができる。PC とスマホ両対応。
+- セッションの表示方法は コンソールスタイル / チャットスタイル の 2 種類から選べる。
+
+## even-terminal との違い
+
+- G2 のメニューから起動できる
+- 新しいセッションを追加できる (スマホアプリから)
+- Web ブラウザ経由で tmux を操作できる
+
 ## 必要なもの (全体)
 
 - **PC**: Node.js 20以上, tmux 3.0以上 (Linux/macOS)
