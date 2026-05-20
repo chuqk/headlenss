@@ -17,6 +17,8 @@ const STRINGS = {
   appSubtitle:            { en: 'tmux sessions', ja: 'tmux セッション' },
   newSession:             { en: '+ new', ja: '+ 新規' },
   sessionNamePlaceholder: { en: 'session name', ja: 'セッション名' },
+  sessionNameRule:        { en: 'Use only half-width letters, numbers, hyphens (-) and underscores (_). Max 40 characters. (Japanese and spaces are not allowed.)',
+                            ja: '半角の英数字・ハイフン (-)・アンダースコア (_) のみ使えます。最大 40 文字です。(日本語やスペースは使えません)' },
   loading:                { en: 'loading...', ja: '読み込み中...' },
   noSessions:             { en: 'no sessions yet', ja: 'セッションがありません' },
   windowUnit:             { en: 'window', ja: 'ウィンドウ' },

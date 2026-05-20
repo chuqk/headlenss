@@ -101,9 +101,15 @@ export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
           type="text"
           placeholder={t('sessionNamePlaceholder')}
           value={newName}
-          onChange={(e) => setNewName(e.target.value)}
+          onChange={(e) => {
+            // 再入力されたらカスタムエラーをクリアする
+            e.currentTarget.setCustomValidity('');
+            setNewName(e.target.value);
+          }}
+          onInvalid={(e) => e.currentTarget.setCustomValidity(t('sessionNameRule'))}
           pattern="[a-zA-Z0-9_\-]+"
           maxLength={40}
+          title={t('sessionNameRule')}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
