@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { extractImagesFromClipboard, filterImageFiles, uploadImage } from '../uploads.ts';
+import { useLanguage } from '../i18n.tsx';
 
 // 新WSプロトコル (server/pty.ts と対応):
 //   client → server: { type: 'attach', cols, rows } / { type: 'input', data } /
@@ -27,6 +28,7 @@ export function SessionView({
   onBack: () => void;
   onSwitchMode: (m: Mode) => void;
 }) {
+  const { t } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   // 「この画面に合わせる」ボタンが呼ぶ実体。useEffect 内で確定する。
   const refitRef = useRef<(() => void) | null>(null);
@@ -51,13 +53,13 @@ export function SessionView({
           const r = await uploadImage(f);
           sendInputRef.current?.(`@${r.path} `);
         } catch (e) {
-          setUploadError(`アップロード失敗: ${(e as Error).message}`);
+          setUploadError(`${t('uploadFailedPrefix')}: ${(e as Error).message}`);
         }
       }
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -328,16 +330,16 @@ export function SessionView({
   return (
     <div className="page-session">
       <header className="session-header">
-        <button onClick={onBack} aria-label="back">
-          ← back
+        <button onClick={onBack} aria-label={t('back')}>
+          {t('back')}
         </button>
         <span className="session-title">{sessionName}</span>
         <button
           type="button"
           className="session-attach"
           onClick={() => fileInputRef.current?.click()}
-          aria-label="画像を添付"
-          title="画像を添付 (ペースト・ドラッグ&ドロップもOK)"
+          aria-label={t('attachImage')}
+          title={t('attachImageTitleDnd')}
           disabled={uploading}
         >
           📎
@@ -358,12 +360,12 @@ export function SessionView({
         <button
           className="session-refit"
           onClick={() => refitRef.current?.()}
-          aria-label="この画面に合わせる"
-          title="この画面サイズに合わせて表示し直す"
+          aria-label={t('fitToScreen')}
+          title={t('fitToScreenTitle')}
         >
           ⟳ fit
         </button>
-        <div className="mode-toggle" role="group" aria-label="表示モード">
+        <div className="mode-toggle" role="group" aria-label={t('viewMode')}>
           <button
             type="button"
             className="mode-toggle-btn active"
@@ -384,9 +386,9 @@ export function SessionView({
       <div ref={containerRef} className="terminal-container" />
       {sessionMissing && (
         <div className="session-missing">
-          <p>tmux session <code>{sessionName}</code> does not exist.</p>
-          <p>Create it from the session list page first.</p>
-          <button type="button" onClick={onBack}>← back to list</button>
+          <p>{t('sessionMissingPrefix')}<code>{sessionName}</code>{t('sessionMissingSuffix')}</p>
+          <p>{t('sessionMissingHint')}</p>
+          <button type="button" onClick={onBack}>{t('backToList')}</button>
         </div>
       )}
       {uploadError && <div className="chat-error">{uploadError}</div>}

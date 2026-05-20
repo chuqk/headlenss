@@ -78,9 +78,14 @@ export type QuestionAnswer = {
   notes?: string;
 };
 
-export type RespondInput =
+export type RespondInput = (
   | { kind: 'permission'; decision: 'allow' | 'deny'; message?: string }
-  | { kind: 'question'; answers: Array<QuestionAnswer> };
+  | { kind: 'question'; answers: Array<QuestionAnswer> }
+) & {
+  // chat 履歴に残す回答整形文をどの言語で作るか (Web UI で選択中の言語)。
+  // 未指定なら 'en'。
+  lang?: 'en' | 'ja';
+};
 
 export type HookDecision =
   | { event: 'PreToolUse'; permissionDecision: 'allow' | 'deny' | 'ask'; reason?: string; updatedInput?: unknown }

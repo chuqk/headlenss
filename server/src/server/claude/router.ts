@@ -574,13 +574,17 @@ claudeRouter.post('/claude/sessions/:tmuxName/respond', async (c) => {
       }
       // chat 履歴に「ユーザがこう回答した」記録を残す。
       // chat / G2 両方の履歴で答えた内容が見えるようにするため。
+      // 整形文の言語は Web UI で選択中の言語 (body.lang) に合わせる。未指定なら en。
+      const isJa = body.lang === 'ja';
       const totalAnswers = body.answers.length;
       const summaryLines = body.answers.map((a, i) => {
         const head = totalAnswers > 1 ? `Q${i + 1}. ` : '';
         const kind = a.answerKind ?? 'predefined';
         let line: string;
         if (kind === 'chat-about-this') {
-          line = '→ (Chat about this を選択 / 質問をキャンセル)';
+          line = isJa
+            ? '→ (Chat about this を選択 / 質問をキャンセル)'
+            : '→ (Chat about this selected / question cancelled)';
         } else if (kind === 'type-something') {
           line = `→ (Type something) ${a.text ?? ''}`;
         } else {
@@ -589,7 +593,8 @@ claudeRouter.post('/claude/sessions/:tmuxName/respond', async (c) => {
           if (a.options && a.options.length > 0) {
             line = `→ ${a.options.join(', ')}`;
           } else {
-            line = `→ ${a.option ?? ''}${note ? ` (補足: ${note})` : ''}`;
+            const noteText = note ? (isJa ? ` (補足: ${note})` : ` (note: ${note})`) : '';
+            line = `→ ${a.option ?? ''}${noteText}`;
           }
         }
         return `${head}${a.question}\n${line}`.trim();
