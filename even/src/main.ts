@@ -2206,8 +2206,15 @@ async function boot(): Promise<void> {
           paintStatus()
           void refreshG2(true)
           updateRecordButton()
-        } else if (phase === 'rootlist') {
-          // Even Hub 審査要件: ルート画面の double-tap は OS 終了ダイアログ
+        } else if (
+          phase === 'rootlist' ||
+          phase === 'unconfigured' ||
+          phase === 'boot' ||
+          phase === 'error'
+        ) {
+          // Even Hub 審査要件: ルート画面に加え、設定前 (unconfigured) / 起動中 (boot) /
+          // エラー (error) 画面でも double-tap で OS 終了ダイアログを出す。
+          // API ログイン前でもアプリを終了できるようにするための対応。
           void bridge?.shutDownPageContainer(1)
         }
       },
