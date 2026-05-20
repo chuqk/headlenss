@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLanguage, type Language, type StringKey } from '../i18n.tsx';
 
 type ClaudeStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
 
@@ -10,17 +11,18 @@ type Session = {
   claudeStatus?: ClaudeStatus;
 };
 
-function claudeIndicator(status?: ClaudeStatus): string {
+function claudeIndicator(status: ClaudeStatus | undefined, t: (key: StringKey) => string): string {
   switch (status) {
-    case 'busy': return '● Claude 実行中';
-    case 'idle': return '◯ Claude 待機';
-    case 'waiting-permission': return '⏸ 承認待ち';
-    case 'waiting-question': return '? 質問待ち';
+    case 'busy': return t('ccBusy');
+    case 'idle': return t('ccIdle');
+    case 'waiting-permission': return t('ccWaitingPermission');
+    case 'waiting-question': return t('ccWaitingQuestion');
     default: return '';
   }
 }
 
 export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
+  const { t, language, setLanguage } = useLanguage();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [newName, setNewName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -81,41 +83,57 @@ export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
     <div className="page">
       <header className="page-header">
         <h1>headlenss</h1>
-        <p className="muted">tmux sessions</p>
+        <p className="muted">{t('appSubtitle')}</p>
+        <label className="lang-select">
+          {t('language')}:
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as Language)}
+          >
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+          </select>
+        </label>
       </header>
 
       <form className="create-form" onSubmit={create}>
         <input
           type="text"
-          placeholder="session name"
+          placeholder={t('sessionNamePlaceholder')}
           value={newName}
-          onChange={(e) => setNewName(e.target.value)}
+          onChange={(e) => {
+            // 再入力されたらカスタムエラーをクリアする
+            e.currentTarget.setCustomValidity('');
+            setNewName(e.target.value);
+          }}
+          onInvalid={(e) => e.currentTarget.setCustomValidity(t('sessionNameRule'))}
           pattern="[a-zA-Z0-9_\-]+"
           maxLength={40}
+          title={t('sessionNameRule')}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
         />
-        <button type="submit">+ new</button>
+        <button type="submit">{t('newSession')}</button>
       </form>
 
       {error && <div className="error">{error}</div>}
 
       {loading ? (
-        <div className="muted">loading...</div>
+        <div className="muted">{t('loading')}</div>
       ) : sessions.length === 0 ? (
-        <div className="muted">no sessions yet</div>
+        <div className="muted">{t('noSessions')}</div>
       ) : (
         <ul className="session-list">
           {sessions.map((s) => {
-            const cc = claudeIndicator(s.claudeStatus);
+            const cc = claudeIndicator(s.claudeStatus, t);
             return (
               <li key={s.name}>
                 <button className="session-open" onClick={() => onOpen(s.name)}>
                   <span className="session-name">{s.name}</span>
                   <span className="session-meta">
-                    {s.windows} window{s.windows === 1 ? '' : 's'}
-                    {s.attached && ' • attached'}
+                    {s.windows} {t(s.windows === 1 ? 'windowUnit' : 'windowUnitPlural')}
+                    {s.attached && ` • ${t('attached')}`}
                     {cc && <span className={`cc-indicator cc-${s.claudeStatus}`}> • {cc}</span>}
                   </span>
                 </button>

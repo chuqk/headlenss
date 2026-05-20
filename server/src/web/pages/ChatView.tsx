@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { extractImagesFromClipboard, filterImageFiles, uploadImage } from '../uploads.ts';
+import { useLanguage } from '../i18n.tsx';
 
 type Mode = 'tmux' | 'chat';
 type ChatMessage = { role: 'user' | 'assistant'; text: string; ts: number; synthetic?: boolean };
@@ -45,6 +46,7 @@ export function ChatView({
   onBack: () => void;
   onSwitchMode: (m: Mode) => void;
 }) {
+  const { t, language } = useLanguage();
   // サーバから返ってくる確定 chat
   const [serverChat, setServerChat] = useState<ChatMessage[]>([]);
   // 送信直後の楽観的表示メッセージ。サーバ側 (transcript / hook) に同じ user メッセージが
@@ -270,13 +272,13 @@ export function ChatView({
           const r = await uploadImage(f);
           insertAtCursor(`@${r.path} `);
         } catch (e) {
-          setError(`アップロード失敗 (${f.name}): ${(e as Error).message}`);
+          setError(`${t('uploadFailedPrefix')} (${f.name}): ${(e as Error).message}`);
         }
       }
     } finally {
       setUploading(false);
     }
-  }, [insertAtCursor]);
+  }, [insertAtCursor, t]);
 
   const onPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const images = extractImagesFromClipboard(e.clipboardData.items);
@@ -300,7 +302,8 @@ export function ChatView({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          // lang: chat 履歴に残る回答整形文をブラウザ選択言語でサーバに作らせる
+          body: JSON.stringify({ ...body, lang: language }),
         },
       );
       if (!res.ok) {
@@ -313,11 +316,11 @@ export function ChatView({
       setQNotes({});
       setPermMessage('');
     } catch (e) {
-      setError(`応答送信失敗: ${(e as Error).message}`);
+      setError(`${t('respondFailedPrefix')}: ${(e as Error).message}`);
     } finally {
       setRespondingPending(false);
     }
-  }, [pendingInter, respondingPending, sessionName]);
+  }, [pendingInter, respondingPending, sessionName, language, t]);
 
   const submitQuestion = useCallback(() => {
     if (!pendingInter?.questions) return;
@@ -363,11 +366,11 @@ export function ChatView({
       if (a.answerKind === 'type-something') return !(a.text ?? '').trim();
       return false;
     })) {
-      setError('未回答の質問があります');
+      setError(t('unansweredQuestions'));
       return;
     }
     void respondToPending({ kind: 'question', answers });
-  }, [pendingInter, qSelections, qSelectionsMulti, qNotes, qFreeText, qKind, respondToPending]);
+  }, [pendingInter, qSelections, qSelectionsMulti, qNotes, qFreeText, qKind, respondToPending, t]);
 
   const submitPermission = useCallback((decision: 'allow' | 'deny') => {
     void respondToPending({
@@ -389,9 +392,9 @@ export function ChatView({
   return (
     <div className="page-session chat-view">
       <header className="session-header">
-        <button onClick={onBack} aria-label="back">← back</button>
+        <button onClick={onBack} aria-label={t('back')}>{t('back')}</button>
         <span className="session-title">{sessionName}</span>
-        <div className="mode-toggle" role="group" aria-label="表示モード">
+        <div className="mode-toggle" role="group" aria-label={t('viewMode')}>
           <button
             type="button"
             className="mode-toggle-btn"
@@ -411,7 +414,7 @@ export function ChatView({
       </header>
       <div ref={scrollerRef} onScroll={onScroll} className="chat-scroller">
         {displayChat.length === 0 ? (
-          <div className="chat-empty">まだ会話がありません。</div>
+          <div className="chat-empty">{t('chatEmpty')}</div>
         ) : (
           displayChat.map((m, i) => {
             const isPending = i >= serverChat.length;
@@ -462,9 +465,9 @@ export function ChatView({
           <div className={`chat-status chat-status-${status}`}>
             <span className="chat-status-dot" aria-hidden="true" />
             <span className="chat-status-text">
-              {status === 'busy' && 'Claude が考えています'}
-              {status === 'waiting-permission' && 'Claude が許可を待っています'}
-              {status === 'waiting-question' && 'Claude が質問を待っています'}
+              {status === 'busy' && t('statusBusy')}
+              {status === 'waiting-permission' && t('statusWaitingPermission')}
+              {status === 'waiting-question' && t('statusWaitingQuestion')}
             </span>
           </div>
         )}
@@ -490,7 +493,7 @@ export function ChatView({
             return (
               <div className="chat-pending">
                 <div className="chat-pending-title">
-                  {hasChatAbout ? '質問のキャンセル確認' : '回答内容の確認'}
+                  {hasChatAbout ? t('confirmCancelTitle') : t('confirmAnswersTitle')}
                 </div>
                 {pendingInter.questions.map((q, qi) => {
                   const k = qKind[qi] ?? 'predefined';
@@ -500,23 +503,23 @@ export function ChatView({
                         Q{qi + 1}. {q.question}
                       </div>
                       <div className="chat-pending-summary-a">
-                        {k === 'chat-about-this' && '→ (Chat about this を選択 → 質問キャンセル)'}
+                        {k === 'chat-about-this' && t('summaryChatAbout')}
                         {k === 'type-something' && (
-                          <>→ <span style={{ fontStyle: 'italic' }}>(自由記述)</span> {qFreeText[qi] ?? ''}</>
+                          <>→ <span style={{ fontStyle: 'italic' }}>{t('freeTextParen')}</span> {qFreeText[qi] ?? ''}</>
                         )}
                         {k === 'predefined' && (() => {
                           const isMulti = !!q.multiSelect;
                           if (isMulti) {
                             const arr = qSelectionsMulti[qi] ?? [];
-                            if (arr.length === 0) return <em>(未回答)</em>;
+                            if (arr.length === 0) return <em>{t('unanswered')}</em>;
                             return <>→ {arr.join(', ')}</>;
                           }
-                          if (!qSelections[qi]) return <em>(未回答)</em>;
+                          if (!qSelections[qi]) return <em>{t('unanswered')}</em>;
                           return (
                             <>
                               → {qSelections[qi]}
                               {qNotes[qi]?.trim() && (
-                                <span className="chat-pending-summary-note"> /補足: {qNotes[qi]}</span>
+                                <span className="chat-pending-summary-note">{t('notePrefix')}{qNotes[qi]}</span>
                               )}
                             </>
                           );
@@ -532,7 +535,7 @@ export function ChatView({
                     onClick={() => setCurrentQIdx(totalQ - 1)}
                     disabled={respondingPending}
                   >
-                    ← 戻る
+                    {t('back')}
                   </button>
                   <button
                     type="button"
@@ -541,12 +544,12 @@ export function ChatView({
                     disabled={respondingPending || (!allAnswered && !hasChatAbout)}
                   >
                     {respondingPending
-                      ? '送信中…'
+                      ? t('sendingEllipsis')
                       : hasChatAbout
-                      ? 'キャンセル送信'
+                      ? t('sendCancellation')
                       : allAnswered
-                      ? '送信'
-                      : '未回答あり'}
+                      ? t('send')
+                      : t('unansweredRemain')}
                   </button>
                 </div>
               </div>
@@ -561,7 +564,7 @@ export function ChatView({
           return (
             <div className="chat-pending">
               <div className="chat-pending-title">
-                Claude からの質問 ({idx + 1} / {totalQ}){isMulti && <span className="chat-pending-multi-badge"> 複数選択可</span>}
+                {t('questionFromClaude')} ({idx + 1} / {totalQ}){isMulti && <span className="chat-pending-multi-badge">{t('multiSelectBadge')}</span>}
               </div>
               <div className="chat-pending-q">
                 {q.header && <div className="chat-pending-header">{q.header}</div>}
@@ -616,7 +619,7 @@ export function ChatView({
                 {kind !== 'type-something' && !isMulti && (
                   <textarea
                     className="chat-pending-notes"
-                    placeholder="補足メモ (任意)。選んだ選択肢と一緒に Claude に届きます。"
+                    placeholder={t('notesPlaceholder')}
                     rows={1}
                     value={qNotes[idx] ?? ''}
                     onChange={(e) => setQNotes((n) => ({ ...n, [idx]: e.target.value }))}
@@ -632,14 +635,14 @@ export function ChatView({
                     onClick={() => setQKind((k) => ({ ...k, [idx]: 'type-something' }))}
                     disabled={respondingPending}
                   >
-                    ✎ Type something(自由記述で答える)
+                    {t('typeSomethingBtn')}
                   </button>
                 ) : (
                   <div className="chat-pending-typesomething">
-                    <div className="chat-pending-typesomething-label">自由記述</div>
+                    <div className="chat-pending-typesomething-label">{t('freeTextLabel')}</div>
                     <textarea
                       className="chat-pending-notes"
-                      placeholder="自由記述してください"
+                      placeholder={t('freeTextPlaceholder')}
                       rows={2}
                       value={qFreeText[idx] ?? ''}
                       onChange={(e) => setQFreeText((n) => ({ ...n, [idx]: e.target.value }))}
@@ -653,7 +656,7 @@ export function ChatView({
                         setQFreeText((n) => { const { [idx]: _, ...rest } = n; return rest; });
                       }}
                     >
-                      自由記述をやめて選択肢に戻る
+                      {t('cancelFreeText')}
                     </button>
                   </div>
                 )}
@@ -663,14 +666,14 @@ export function ChatView({
                   type="button"
                   className="chat-pending-chat-about"
                   onClick={() => {
-                    if (window.confirm('Chat about this を選ぶと、AskUserQuestion 全体がキャンセルされて自由対話に切り替わります。続けますか?')) {
+                    if (window.confirm(t('chatAboutConfirm'))) {
                       setQKind((k) => ({ ...k, [idx]: 'chat-about-this' }));
                       setCurrentQIdx(totalQ); // 直接確認画面へ
                     }
                   }}
                   disabled={respondingPending}
                 >
-                  💬 Chat about this(質問をキャンセルして自由対話)
+                  {t('chatAboutBtn')}
                 </button>
               </div>
               <div className="chat-pending-actions">
@@ -680,7 +683,7 @@ export function ChatView({
                   onClick={() => setCurrentQIdx(idx - 1)}
                   disabled={idx === 0 || respondingPending}
                 >
-                  ← 戻る
+                  {t('back')}
                 </button>
                 {isAnswered(idx) && (
                   <button
@@ -689,7 +692,7 @@ export function ChatView({
                     onClick={() => setCurrentQIdx(idx + 1)}
                     disabled={respondingPending}
                   >
-                    {idx + 1 === totalQ ? '確認へ →' : '次へ →'}
+                    {idx + 1 === totalQ ? t('toReview') : t('next')}
                   </button>
                 )}
               </div>
@@ -699,7 +702,7 @@ export function ChatView({
 
         {pendingInter?.kind === 'permission' && (
           <div className="chat-pending">
-            <div className="chat-pending-title">Claude からの許可リクエスト</div>
+            <div className="chat-pending-title">{t('permRequestTitle')}</div>
             <div className="chat-pending-tool">tool: <code>{pendingInter.toolName}</code></div>
             <pre className="chat-pending-toolinput">
               {(() => {
@@ -709,7 +712,7 @@ export function ChatView({
             </pre>
             <textarea
               className="chat-pending-notes"
-              placeholder="メッセージ (任意)"
+              placeholder={t('permMessagePlaceholder')}
               rows={1}
               value={permMessage}
               onChange={(e) => setPermMessage(e.target.value)}
@@ -721,7 +724,7 @@ export function ChatView({
                 onClick={() => submitPermission('allow')}
                 disabled={respondingPending}
               >
-                許可
+                {t('allow')}
               </button>
               <button
                 type="button"
@@ -729,13 +732,13 @@ export function ChatView({
                 onClick={() => submitPermission('deny')}
                 disabled={respondingPending}
               >
-                拒否
+                {t('deny')}
               </button>
             </div>
           </div>
         )}
       </div>
-      {error && <div className="chat-error">送信エラー: {error}</div>}
+      {error && <div className="chat-error">{t('sendErrorPrefix')}: {error}</div>}
       <form
         className="chat-input"
         onSubmit={(e) => { e.preventDefault(); void send(); }}
@@ -744,8 +747,8 @@ export function ChatView({
           type="button"
           className="chat-attach"
           onClick={() => fileInputRef.current?.click()}
-          aria-label="画像を添付"
-          title="画像を添付 (ペーストもOK)"
+          aria-label={t('attachImage')}
+          title={t('attachImageTitlePaste')}
           disabled={uploading}
         >
           📎
@@ -769,12 +772,12 @@ export function ChatView({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder={uploading ? 'アップロード中…' : 'メッセージを入力 (PCはEnter送信/Shift+Enter改行、スマホは送信ボタン)'}
+          placeholder={uploading ? t('uploadingEllipsis') : t('messageInputPlaceholder')}
           rows={1}
           disabled={sending}
         />
         <button type="submit" disabled={sending || !input.trim()}>
-          {sending ? '...' : '送信'}
+          {sending ? '...' : t('send')}
         </button>
       </form>
     </div>
