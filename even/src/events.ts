@@ -1,6 +1,13 @@
 import { OsEventTypeList, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
 
-const SCROLL_COOLDOWN_MS = 200
+// スクロールイベントのクールダウン (ms)。直近に通したイベントからこの時間内に
+// 来たイベントは捨てる。設定で変更できるよう let + setter にしている。
+let scrollCooldownMs = 200
+
+/** スクロールのクールダウン時間 (ms) を設定する。設定 UI から呼ばれる。 */
+export function setScrollCooldownMs(ms: number): void {
+  if (Number.isFinite(ms) && ms >= 0) scrollCooldownMs = ms
+}
 
 type Handlers = {
   onScrollUp: () => void
@@ -29,7 +36,7 @@ let lastScrollTime = 0
 
 function scrollThrottled(): boolean {
   const now = Date.now()
-  if (now - lastScrollTime < SCROLL_COOLDOWN_MS) return true
+  if (now - lastScrollTime < scrollCooldownMs) return true
   lastScrollTime = now
   return false
 }

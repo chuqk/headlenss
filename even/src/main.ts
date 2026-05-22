@@ -1,5 +1,6 @@
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk'
+import { getTextWidth } from '@evenrealities/pretext'
 
 import {
   getPcmByteLength,
@@ -7,8 +8,16 @@ import {
   resetPcmCounter,
   trackPcmFrame,
 } from './audio'
-import { onEvenHubEvent, setEventHandlers } from './events'
-import { initRenderer, resetPageState, showScreen, updateContent, updateFooter, updateHeader } from './renderer'
+import { onEvenHubEvent, setEventHandlers, setScrollCooldownMs } from './events'
+import {
+  initRenderer,
+  MAIN_INNER_WIDTH,
+  resetPageState,
+  showScreen,
+  updateContent,
+  updateFooter,
+  updateHeader,
+} from './renderer'
 import {
   HeadlenssClient,
   type ChatItem,
@@ -17,9 +26,17 @@ import {
   type Session,
 } from './server-client'
 import {
+  CHAT_DISPLAY_LINES_MAX,
+  CHAT_DISPLAY_LINES_MIN,
+  clampChatDisplayLines,
   DEFAULT_SETTINGS,
   loadSettings,
   saveSettings,
+  SCROLL_ANIM_TICK_MAX,
+  SCROLL_ANIM_TICK_MIN,
+  SCROLL_COOLDOWN_MAX,
+  SCROLL_COOLDOWN_MIN,
+  SCROLL_LINES_MIN,
   type OperatingPoint,
   type Settings,
 } from './settings'
@@ -88,6 +105,14 @@ const serverProbeText = document.getElementById('serverProbeText') as HTMLSpanEl
 const smApiKeyEl = document.getElementById('smApiKey') as HTMLInputElement
 const smLangEl = document.getElementById('smLang') as HTMLSelectElement
 const smOperatingPointEl = document.getElementById('smOperatingPoint') as HTMLSelectElement
+const chatLinesEl = document.getElementById('chatLines') as HTMLInputElement
+const chatBottomSpacerEl = document.getElementById('chatBottomSpacer') as HTMLInputElement
+const scrollLinesEl = document.getElementById('scrollLines') as HTMLInputElement
+const scrollLinesValEl = document.getElementById('scrollLinesVal') as HTMLSpanElement
+const scrollCooldownEl = document.getElementById('scrollCooldown') as HTMLInputElement
+const scrollCooldownValEl = document.getElementById('scrollCooldownVal') as HTMLSpanElement
+const scrollAnimTickEl = document.getElementById('scrollAnimTick') as HTMLInputElement
+const scrollAnimTickValEl = document.getElementById('scrollAnimTickVal') as HTMLSpanElement
 
 const pendingSection = document.getElementById('pendingSection') as HTMLElement
 const pendingTextEl = document.getElementById('pendingText') as HTMLDivElement
@@ -127,13 +152,27 @@ type Phase =
   | 'error'
 
 const TMUX_OUTPUT_LINES = 200          // (legacy) capture-pane 用 — 現状未使用
-// G2 レンズの content area は CONTENT_HEIGHT=216px - paddingLength*2(=16px) ≒ 200px。
-// rootlist で ROOT_LIST_VISIBLE=7 が問題なく収まっていることが実機確認できているので、
-// 同じ container 形状の chat 表示も 7 行まで詰める。 5 のままだと下端に 1 行分の余白が
-// 残って情報量が無駄に少なくなっていた。
-const CHAT_DISPLAY_LINES = 7           // G2レンズに出す chat 行数 (rootlist と揃えて 7 行に)
-const SCROLL_ANIM_TICK_MS = 10         // スクロールアニメーション: 1 行ずつ進める間隔
-const CHAT_WRAP_WIDTH = 56             // 全角28文字相当の視覚カラム幅 (ASCII=1, CJK等=2 でカウント)
+// G2 レンズに出す chat 行数。content area は CONTENT_HEIGHT=210px - paddingLength*2(=16px)
+// ≒ 194px で、7 行詰めると 1 行 ~27.7px となり日本語のディセンダで最終行が切れる実機報告が
+// あった。最適値は個体差・フォントで変わるので固定せず、設定 (settings.chatDisplayLines) で
+// WebView から変更できるようにしている。ここはその参照用アクセサ。
+function chatDisplayLines(): number {
+  return settings.chatDisplayLines
+}
+// スクロール系パラメータは settings で WebView から変更できる。以下は参照アクセサ。
+/** スクロール 1 ジェスチャーで動かす行数。 */
+function scrollLinesPerGesture(): number {
+  return settings.scrollLinesPerGesture
+}
+/** スクロールアニメーションの 1 行あたりの間隔 (ms)。 */
+function scrollAnimTickMs(): number {
+  return settings.scrollAnimTickMs
+}
+// chat の折り返し幅。レンズ main コンテナの実描画幅 (px) を基準にし、@evenrealities/pretext
+// の getTextWidth (LVGL と同じ実グリフ幅) で計測する。これで「アプリが 1 行と思った行を
+// レンズが勝手にもう一度折り返す」ズレを無くす。-2px は丸め誤差のセーフティマージン。
+const CHAT_WRAP_PX = MAIN_INNER_WIDTH - 2
+const CHAT_WRAP_WIDTH = 56             // (cc-response の粗いスライス用) 全角28文字相当のカラム数
 const CC_POLL_INTERVAL_MS = 1500       // Claude sessions / chat / pending のポーリング間隔
 const ROOT_LIST_VISIBLE = 7            // G2 root 画面に同時表示するセッション数 (8 行送ると容量超えでスクロールバーが出るため 7 に絞る)
 const CC_LIST_VISIBLE = 7              // cc-response 画面に同時表示する行数 (rootlist と揃える)
@@ -337,14 +376,17 @@ function buildG2Content(): string {
 
   // idle時は Claude Code の chat (user発言とClaude返事) を画面いっぱい使って表示。
   if (phase === 'idle') {
-    const formatted = formatChatLines(claudeChat, CHAT_WRAP_WIDTH)
+    const formatted = formatChatLines(claudeChat, CHAT_WRAP_PX)
     if (formatted.length > 0) {
       // pending があるなら 1 行目に notice
       const notice = claudePending
         ? (claudePending.kind === 'question' ? t('noticeQuestion') : t('noticePermission'))
         : null
-      const window = chatWindow(formatted, CHAT_DISPLAY_LINES - (notice ? 1 : 0))
-      return notice ? [notice, ...window].join('\n') : window.join('\n')
+      const window = chatWindow(formatted, chatDisplayLines() - (notice ? 1 : 0))
+      const body = notice ? [notice, ...window].join('\n') : window.join('\n')
+      // 末尾スペーサ: ON なら最終行のさらに下に空行を 1 行足す。最終行が下端 border に
+      // かかって切れる時、この空行を犠牲にして実テキストを安全域へ逃がす。
+      return settings.chatBottomSpacer ? body + '\n' : body
     }
     return `[${settings.sessionName || 'no session'}]\n${t('chatNoMsg')}`
   }
@@ -553,22 +595,12 @@ function summarizeToolInput(input: unknown): string {
   }
 }
 
-/** ASCII=1, CJK 等=2 で視覚カラム数を数える簡易計算。生ログには触らず表示時のみ使う。 */
-function visualWidth(s: string): number {
-  let w = 0
-  for (const ch of s) {
-    const cp = ch.codePointAt(0) ?? 0
-    w += cp <= 0x7f ? 1 : 2
-  }
-  return w
-}
-
 /**
  * チャット項目を G2 レンズ用に整形。
  * 役割タグ ([YOU] / [Claude]) を独立行で挟み、タグの前に空行を入れる。
  * 生ログ (claudeChat) は書き換えず、表示時にこの関数で都度生成する。
  */
-function formatChatLines(items: ChatItem[], maxColumns: number): string[] {
+function formatChatLines(items: ChatItem[], maxWidthPx: number): string[] {
   const out: string[] = []
   for (const item of items) {
     const text = item.text.replace(/\r/g, '').trim()
@@ -578,23 +610,35 @@ function formatChatLines(items: ChatItem[], maxColumns: number): string[] {
     out.push(tag)
     const paragraphs = text.split('\n')
     for (const para of paragraphs) {
-      const wrapped = wrapText(para, maxColumns)
+      const wrapped = wrapText(para, maxWidthPx)
       for (const line of wrapped) out.push(line)
     }
   }
   return out
 }
 
-/** maxColumns は ASCII を 1, 全角 (CJK 等) を 2 と数えた視覚カラム数 */
-function wrapText(text: string, maxColumns: number): string[] {
-  if (maxColumns <= 0 || visualWidth(text) <= maxColumns) return [text || '']
+/**
+ * text を maxWidthPx に収まるよう px 精度で折り返す。
+ * G2 レンズの LVGL レンダラと同じ実グリフ幅 (getTextWidth, カーニング込み) で計測するので、
+ * 「アプリが 1 行と思った行をレンズが勝手に再折り返しする」ズレが起きない。
+ * 半角スペースを優先折り返し位置にし、無ければ任意文字境界でハードブレーク (日本語等)。
+ *
+ * 幅の増分はペアワイズ・カーニングが成立する (getTextWidth(s+c) は s 末尾と c の
+ * ペアのみで決まる) ことを利用し、buf 全体を測り直さず O(1) で積算する。
+ */
+function wrapText(text: string, maxWidthPx: number): string[] {
+  if (maxWidthPx <= 0 || getTextWidth(text) <= maxWidthPx) return [text || '']
   const out: string[] = []
   let buf = ''
   let bufW = 0
-  let lastSpaceLen = -1  // 折り返し候補位置 (buf 内の文字数)
+  let lastChar = ''       // buf の末尾文字 (カーニング増分計算用)
+  let lastSpaceLen = -1   // 直近の空白直後の位置 (buf の code unit index)
   for (const ch of text) {
-    const cw = (ch.codePointAt(0) ?? 0) <= 0x7f ? 1 : 2
-    if (bufW + cw > maxColumns) {
+    // buf + ch の幅増分 = getTextWidth(末尾文字 + ch) - getTextWidth(末尾文字)
+    const addW = lastChar
+      ? getTextWidth(lastChar + ch) - getTextWidth(lastChar)
+      : getTextWidth(ch)
+    if (buf !== '' && bufW + addW > maxWidthPx) {
       if (lastSpaceLen >= 0) {
         // 直近の空白で折り返す
         out.push(buf.slice(0, lastSpaceLen).trimEnd())
@@ -604,13 +648,14 @@ function wrapText(text: string, maxColumns: number): string[] {
         out.push(buf)
         buf = ch
       }
-      bufW = visualWidth(buf)
+      bufW = getTextWidth(buf)
       lastSpaceLen = -1
     } else {
       if (ch === ' ') lastSpaceLen = buf.length + 1  // 空白の直後で折り返したい
       buf += ch
-      bufW += cw
+      bufW += addW
     }
+    lastChar = ch  // break / 追加どちらの分岐でも buf は ch で終わる
   }
   if (buf) out.push(buf)
   return out
@@ -637,8 +682,8 @@ function lensWindow(text: string, n: number): string {
 }
 
 function maxChatScrollOffset(): number {
-  const formatted = formatChatLines(claudeChat, CHAT_WRAP_WIDTH)
-  return Math.max(0, formatted.length - CHAT_DISPLAY_LINES)
+  const formatted = formatChatLines(claudeChat, CHAT_WRAP_PX)
+  return Math.max(0, formatted.length - chatDisplayLines())
 }
 
 function isScrolled(): boolean {
@@ -648,23 +693,35 @@ function isScrolled(): boolean {
 function scrollBack(): void {
   if (phase !== 'idle') return
   if (maxChatScrollOffset() === 0) return
-  scrollAnimPending += CHAT_DISPLAY_LINES
+  scrollAnimPending += scrollLinesPerGesture()
   startScrollAnimation()
 }
 
 function scrollForward(): void {
   if (phase !== 'idle') return
   if (scrollOffset === 0 && scrollAnimPending <= 0) return
-  scrollAnimPending -= CHAT_DISPLAY_LINES
+  scrollAnimPending -= scrollLinesPerGesture()
   startScrollAnimation()
 }
 
 /** 1 行ずつ scrollOffset を進めるアニメーションループ。
  *  scrollAnimPending を 0 に向けて消化する。新たに scroll イベントが来たら自動で延長される。
  *  refreshG2 を await することで SDK レンダリングを 1 行ごとに必ず確定させる
- *  (await しないと SDK 側でフレームが coalesce されて一括スクロールに見える)。 */
+ *  (await しないと SDK 側でフレームが coalesce されて一括スクロールに見える)。
+ *  スクロール速度が 0 の時はアニメーションせず、pending を一括消化して 1 回だけ再描画する。 */
 function startScrollAnimation(): void {
   if (scrollAnimTimer) return  // 既に走っているなら何もしない (pending が増えただけ)
+  // 速度 0: アニメ無し。目的位置へ一気に移動して updateContent も 1 回だけ。
+  if (scrollAnimTickMs() <= 0) {
+    if (phase !== 'idle') { scrollAnimPending = 0; return }
+    const next = Math.max(0, Math.min(maxChatScrollOffset(), scrollOffset + scrollAnimPending))
+    scrollAnimPending = 0
+    if (next !== scrollOffset) {
+      scrollOffset = next
+      void updateContent(buildG2Content())
+    }
+    return
+  }
   const tick = async (): Promise<void> => {
     scrollAnimTimer = null
     if (phase !== 'idle') { scrollAnimPending = 0; return }
@@ -680,9 +737,9 @@ function startScrollAnimation(): void {
       scrollAnimPending++
     }
     if (changed) void updateContent(buildG2Content())  // fire-and-forget で SDK 往復を待たない
-    if (scrollAnimPending !== 0) scrollAnimTimer = setTimeout(() => { void tick() }, SCROLL_ANIM_TICK_MS)
+    if (scrollAnimPending !== 0) scrollAnimTimer = setTimeout(() => { void tick() }, scrollAnimTickMs())
   }
-  scrollAnimTimer = setTimeout(() => { void tick() }, SCROLL_ANIM_TICK_MS)
+  scrollAnimTimer = setTimeout(() => { void tick() }, scrollAnimTickMs())
 }
 
 function resetScroll(): void {
@@ -930,11 +987,11 @@ async function refreshClaudeData(): Promise<void> {
     ])
     // chat: scrollback 中なら新着分だけオフセット繰り上げ
     if (scrollOffset > 0) {
-      const oldLen = formatChatLines(claudeChat, CHAT_WRAP_WIDTH).length
-      const newLen = formatChatLines(chat, CHAT_WRAP_WIDTH).length
+      const oldLen = formatChatLines(claudeChat, CHAT_WRAP_PX).length
+      const newLen = formatChatLines(chat, CHAT_WRAP_PX).length
       const delta = newLen - oldLen
       if (delta > 0) {
-        const max = Math.max(0, newLen - CHAT_DISPLAY_LINES)
+        const max = Math.max(0, newLen - chatDisplayLines())
         scrollOffset = Math.min(max, scrollOffset + delta)
       }
     }
@@ -1051,11 +1108,31 @@ clearHistoryBtn.addEventListener('click', () => {
 setInterval(renderHistory, 60_000)
 
 // ─── Settings UI ───────────────────────────────────────────────────────
+/** スライダーと、その横の現在値表示を同じ値で揃える。 */
+function syncSlider(input: HTMLInputElement, valEl: HTMLElement, value: number): void {
+  input.value = String(value)
+  valEl.textContent = String(value)
+}
+
+/** スクロール行数スライダーの最大値を「レンズ表示行数」に追従させる。
+ *  現在値が新上限を超えていれば切り下げ、スライダーと値表示も同期する。 */
+function applyScrollLinesMax(): void {
+  const max = settings.chatDisplayLines
+  scrollLinesEl.max = String(max)
+  if (settings.scrollLinesPerGesture > max) settings.scrollLinesPerGesture = max
+  syncSlider(scrollLinesEl, scrollLinesValEl, settings.scrollLinesPerGesture)
+}
+
 function renderSettings(): void {
   serverUrlEl.value = settings.serverBaseUrl
   smApiKeyEl.value = settings.speechmaticsApiKey
   smLangEl.value = settings.speechmaticsLang
   smOperatingPointEl.value = settings.speechmaticsOperatingPoint
+  chatLinesEl.value = String(settings.chatDisplayLines)
+  chatBottomSpacerEl.checked = settings.chatBottomSpacer
+  applyScrollLinesMax() // scrollLinesEl の max / value / 値表示をまとめて設定
+  syncSlider(scrollCooldownEl, scrollCooldownValEl, settings.scrollCooldownMs)
+  syncSlider(scrollAnimTickEl, scrollAnimTickValEl, settings.scrollAnimTickMs)
 }
 
 async function persistSettings(): Promise<void> {
@@ -1089,6 +1166,70 @@ smOperatingPointEl.addEventListener('change', () => {
   const v = smOperatingPointEl.value as OperatingPoint
   settings.speechmaticsOperatingPoint = v === 'standard' ? 'standard' : 'enhanced'
   void persistSettings()
+})
+
+// 入力欄の min/max は settings 側の定数を単一ソースにする (HTML の値を上書き)。
+// scrollLinesEl.max だけは「レンズ表示行数」に追従する動的値なので applyScrollLinesMax() が設定。
+chatLinesEl.min = String(CHAT_DISPLAY_LINES_MIN)
+chatLinesEl.max = String(CHAT_DISPLAY_LINES_MAX)
+scrollLinesEl.min = String(SCROLL_LINES_MIN)
+scrollCooldownEl.min = String(SCROLL_COOLDOWN_MIN)
+scrollCooldownEl.max = String(SCROLL_COOLDOWN_MAX)
+scrollAnimTickEl.min = String(SCROLL_ANIM_TICK_MIN)
+scrollAnimTickEl.max = String(SCROLL_ANIM_TICK_MAX)
+
+/**
+ * range スライダーを設定値に接続する。
+ * - ドラッグ中 (input): 値表示を更新し onInput でライブ反映
+ * - 離した時 (change): 永続化し、必要なら onCommit で確定処理
+ * range 入力は min/max/step にネイティブでクランプされるので追加の丸めは不要。
+ */
+function bindSlider(
+  input: HTMLInputElement,
+  valEl: HTMLElement,
+  onInput: (v: number) => void,
+  onCommit?: () => void,
+): void {
+  input.addEventListener('input', () => {
+    valEl.textContent = input.value
+    onInput(Number(input.value))
+  })
+  input.addEventListener('change', () => {
+    void persistSettings()
+    onCommit?.()
+  })
+}
+
+// レンズ表示行数はフォーム (数値入力)。type=number は範囲外をネイティブでは弾かないので
+// clampChatDisplayLines で丸める。値が変わるとスクロール行数の上限も追従させる。
+chatLinesEl.addEventListener('change', () => {
+  const next = clampChatDisplayLines(chatLinesEl.value)
+  settings.chatDisplayLines = next
+  chatLinesEl.value = String(next) // clamp 結果を入力欄に戻す
+  // 表示窓が狭まると現在の scrollOffset が範囲外になり得るのでクリップ
+  scrollOffset = Math.min(scrollOffset, maxChatScrollOffset())
+  applyScrollLinesMax() // スクロール行数スライダーの上限を追従 + 必要なら値を切り下げ
+  void persistSettings()
+  void refreshG2(true)
+})
+
+bindSlider(scrollLinesEl, scrollLinesValEl, (v) => {
+  settings.scrollLinesPerGesture = v
+})
+
+bindSlider(scrollCooldownEl, scrollCooldownValEl, (v) => {
+  settings.scrollCooldownMs = v
+  setScrollCooldownMs(v) // events.ts に即反映
+})
+
+bindSlider(scrollAnimTickEl, scrollAnimTickValEl, (v) => {
+  settings.scrollAnimTickMs = v
+})
+
+chatBottomSpacerEl.addEventListener('change', () => {
+  settings.chatBottomSpacer = chatBottomSpacerEl.checked
+  void persistSettings()
+  void refreshG2(true)
 })
 
 function scheduleProbe(): void {
@@ -2254,6 +2395,7 @@ async function boot(): Promise<void> {
   settings = await loadSettings(bridge)
   log(`Loaded settings: server=${settings.serverBaseUrl || '(none)'} session=${settings.sessionName} lang=${settings.language}`)
   applyClientBase()
+  setScrollCooldownMs(settings.scrollCooldownMs) // events.ts に保存済みの値を反映
   // 設定の言語を反映 (WebView の data-i18n を一斉に書き換え + セレクタラベル)
   setLanguage(settings.language)
   applyTranslations()
