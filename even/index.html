@@ -252,6 +252,41 @@
               <option value="standard">standard</option>
             </select>
           </label>
+          <label class="row">
+            <span data-i18n="scrollLines">スクロール行数/操作</span>
+            <div class="slider-line">
+              <input id="scrollLines" type="range" min="1" max="7" step="1" />
+              <span id="scrollLinesVal" class="slider-val">7</span>
+            </div>
+            <small class="setting-desc" data-i18n="scrollLinesDesc">スクロール1回で動く行数。最小1、最大はレンズ表示行数（最大にすると1画面ぶんのページ送り）。</small>
+          </label>
+          <label class="row">
+            <span data-i18n="scrollCooldown">スクロール間隔 (ms)</span>
+            <div class="slider-line">
+              <input id="scrollCooldown" type="range" min="0" max="2000" step="10" />
+              <span id="scrollCooldownVal" class="slider-val">200</span>
+            </div>
+            <small class="setting-desc" data-i18n="scrollCooldownDesc">スクロールを受け付ける最小間隔 (ms, 0〜2000)。大きくすると1回のスワイプが二重に効いて2倍スクロールするのを抑えられる。</small>
+          </label>
+          <label class="row">
+            <span data-i18n="scrollAnimTick">スクロール速度 (ms/行)</span>
+            <div class="slider-line">
+              <input id="scrollAnimTick" type="range" min="0" max="200" step="5" />
+              <span id="scrollAnimTickVal" class="slider-val">10</span>
+            </div>
+            <small class="setting-desc" data-i18n="scrollAnimTickDesc">スクロールアニメの1行あたりの待ち時間 (ms, 0〜200)。小さいほど速い。0 にするとアニメ無しで、目的位置へ一括スクロール（1回の更新でまとめて移動）。</small>
+          </label>
+          <label class="row">
+            <span data-i18n="chatLines">レンズ表示行数</span>
+            <input id="chatLines" type="number" min="1" max="7" step="1"
+                   inputmode="numeric" autocomplete="off" />
+            <small class="setting-desc" data-i18n="chatLinesDesc">G2レンズに一度に表示するチャットの行数 (1〜7)。多いほど一度に読めるが、多すぎると最終行が下端で切れることがある。</small>
+          </label>
+          <label class="row">
+            <span data-i18n="chatBottomSpacer">末尾に空行を1行足す</span>
+            <input id="chatBottomSpacer" type="checkbox" />
+            <small class="setting-desc" data-i18n="chatBottomSpacerDesc">最終行の下に空行を1行足す。最終行が下端で切れて見える時に ON にすると本文が収まりやすい。</small>
+          </label>
         </div>
       </details>
 

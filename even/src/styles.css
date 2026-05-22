@@ -662,6 +662,33 @@ label.row > span:first-child {
 .probe.err { color: var(--err); }
 .probe.busy { color: var(--warn); }
 
+/* 設定項目の補足説明文 (パラメータが何をするか / 変えるとどうなるか) */
+.setting-desc {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* min/max を持つ数値設定はスライダー + 現在値表示で操作する */
+.slider-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-line input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.slider-val {
+  flex: none;
+  min-width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 input[type="text"],
 input[type="url"],
 input[type="password"],

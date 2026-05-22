@@ -100,6 +100,31 @@ const STRINGS = {
   smApiKey:       { en: 'Speechmatics API key',                 ja: 'Speechmatics API key' },
   smLang:         { en: 'Language',                             ja: '言語' },
   smOperating:    { en: 'operating_point',                      ja: 'operating_point' },
+  chatLines:      { en: 'Lens chat lines',                      ja: 'レンズ表示行数' },
+  chatLinesDesc:  {
+    en: 'Chat lines shown on the lens at once (1-7). More lets you read more, but too many can clip the bottom line.',
+    ja: 'G2レンズに一度に表示するチャットの行数 (1〜7)。多いほど一度に読めるが、多すぎると最終行が下端で切れることがある。',
+  },
+  chatBottomSpacer:{ en: 'Add blank line below',                ja: '末尾に空行を1行足す' },
+  chatBottomSpacerDesc: {
+    en: 'Adds one blank line below the last line. Turn on if the last line looks cut off at the bottom.',
+    ja: '最終行の下に空行を1行足す。最終行が下端で切れて見える時に ON にすると本文が収まりやすい。',
+  },
+  scrollLines:    { en: 'Scroll lines / gesture',               ja: 'スクロール行数/操作' },
+  scrollLinesDesc: {
+    en: 'Lines moved per scroll. Min 1, max equals the lens chat lines (set to max for full-page scrolling).',
+    ja: 'スクロール1回で動く行数。最小1、最大はレンズ表示行数（最大にすると1画面ぶんのページ送り）。',
+  },
+  scrollCooldown: { en: 'Scroll cooldown (ms)',                 ja: 'スクロール間隔 (ms)' },
+  scrollCooldownDesc: {
+    en: 'Minimum gap between accepted scrolls (ms, 0-2000). Increase it to stop one swipe from scrolling twice.',
+    ja: 'スクロールを受け付ける最小間隔 (ms, 0〜2000)。大きくすると1回のスワイプが二重に効いて2倍スクロールするのを抑えられる。',
+  },
+  scrollAnimTick: { en: 'Scroll anim speed (ms/line)',          ja: 'スクロール速度 (ms/行)' },
+  scrollAnimTickDesc: {
+    en: 'Delay per line of the scroll animation (ms, 0-200). Smaller is faster. Set 0 to disable the animation: jump straight to the target in a single update.',
+    ja: 'スクロールアニメの1行あたりの待ち時間 (ms, 0〜200)。小さいほど速い。0 にするとアニメ無しで、目的位置へ一括スクロール（1回の更新でまとめて移動）。',
+  },
   unset:          { en: '(unset)',                              ja: '未設定' },
   toastUrlCopied: { en: 'URL copied. Open it in your browser.', ja: 'URL をコピーしました。ブラウザで開いてください。' },
   toastUrlCopyFail:{ en: 'Failed to copy. URL: ',               ja: 'コピーに失敗。URL: ' },
