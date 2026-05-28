@@ -13,15 +13,22 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# (A) systemctl restart 時に node プロセスだけ kill し、tmux サーバや claude を
+# 巻き添えにしない。デフォルト KillMode=control-group は cgroup 全体に SIGTERM を
+# 撃つので tmux も死んでしまう。process に変えると main プロセス (node) だけが対象。
+# 既存セッションは persist.ts の restoreSessions が「既に在るなら skip」と判定して
+# そのまま再利用される。
+KillMode=process
+
+# (B) 新規に起動する tmux サーバを headlenss.service の cgroup から切り出す。
+# systemd-run --user --scope で別 scope cgroup に置くと、headlenss の再起動で
+# 巻き添えにならない (= 再起動後も tmux + claude が生き続ける)。コード側 (tmux.ts) は
+# 環境変数 HEADLENSS_TMUX_WRAPPER を読んで tmux 起動コマンドを包む実装済み。
+# (A) との二重化: 仮に B が機能しない環境でも A が後ろから守る。
+Environment="HEADLENSS_TMUX_WRAPPER=systemd-run --user --scope --quiet --collect --"
+
 # Make sure tmux sessions created by the server share the user's default tmux server
 Environment=PATH={{PATH}}
-# 注: systemctl restart 時、デフォルト KillMode=control-group のため
-# tmux サーバが headlenss.service の cgroup に居ると一緒に殺される。
-# 現状は persist.ts による「殺してから再生」で対処している。
-# 将来 polkit ルールで systemd-run --user --scope を service 内から呼べる
-# ようにすれば、.env か Environment= に
-#   HEADLENSS_TMUX_WRAPPER=systemd-run --user --scope --quiet --collect --
-# を設定して、tmux サーバを別 scope に分離できる (コード側は対応済み)。
 
 [Install]
 WantedBy=default.target
