@@ -95,6 +95,19 @@ export function ChatView({
     return el.scrollHeight - el.scrollTop - el.clientHeight < 64;
   };
 
+  // 末尾へ即時スクロール。 markdown / 画像の遅延レイアウトで scrollHeight が後から
+  // 伸びるケースに耐えるよう、即時 + 次フレーム + 80ms 後 の 3 回試行する。
+  // ref しか触らないので依存配列は空で OK。
+  const scrollToBottom = useCallback(() => {
+    const pin = () => {
+      const el = scrollerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    requestAnimationFrame(pin);
+    setTimeout(pin, 80);
+  }, []);
+
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -172,24 +185,18 @@ export function ChatView({
   // displayChat が伸びたら自動末尾追従(履歴遡り中はしない)
   useEffect(() => {
     if (displayChat.length > lastLenRef.current && !userScrolledUpRef.current) {
-      requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+      scrollToBottom();
     }
     lastLenRef.current = displayChat.length;
-  }, [displayChat.length]);
+  }, [displayChat.length, scrollToBottom]);
 
   // 状態が変化(idle → busy 等)した時にも末尾追従。ユーザが下にいたなら、
   // 新しく現れた「考え中」インジケータが見える位置に揃える。
   useEffect(() => {
     if (!userScrolledUpRef.current) {
-      requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+      scrollToBottom();
     }
-  }, [status]);
+  }, [status, scrollToBottom]);
 
   const onScroll = () => {
     userScrolledUpRef.current = !isNearBottom();
@@ -203,7 +210,10 @@ export function ChatView({
     const optimistic: ChatMessage = { role: 'user', text, ts: Date.now() };
     setPending((p) => [...p, optimistic]);
     setInput('');
+    // 送信は「ユーザが意図して末尾へ戻りたい」操作なので、
+    // useEffect 経由の auto-scroll ガードに頼らず明示的に末尾固定する。
     userScrolledUpRef.current = false;
+    scrollToBottom();
 
     setSending(true);
     setError(null);
@@ -387,6 +397,14 @@ export function ChatView({
     if (!ta) return;
     ta.style.height = 'auto';
     ta.style.height = `${ta.scrollHeight}px`;
+    // textarea の伸縮で .chat-scroller (flex:1) のビューポート高さが変わる。
+    // 末尾に居たユーザを置き去りにしないよう、入力で textarea が伸びた瞬間も
+    // 末尾追従する。手で上に遡って読んでいるユーザは userScrolledUpRef が true
+    // なので触らない。
+    if (!userScrolledUpRef.current) {
+      const el = scrollerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
   }, [input]);
 
   return (
