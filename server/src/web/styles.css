@@ -194,6 +194,26 @@ button {
   color: var(--danger);
 }
 
+.session-star {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0 0.85rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.session-star:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.session-star.is-starred {
+  color: #f5a623;
+}
+
 /* visualViewport.height を JS で --vvh に同期。
    スマホでキーボードが出たら xterm 表示領域を可視領域(=キーボード上)だけに縮める。
    デスクトップでは visualViewport.height = innerHeight なので常に全画面。 */

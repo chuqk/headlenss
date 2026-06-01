@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import {
+  useFixedStyleWithIOsKeyboard,
+  useIOsKeyboardHeight,
+} from 'react-ios-keyboard-viewport';
 import { extractImagesFromClipboard, filterImageFiles, uploadImage } from '../uploads.ts';
 import { useLanguage } from '../i18n.tsx';
 
@@ -77,11 +81,43 @@ export function ChatView({
   const [error, setError] = useState<string | null>(null);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLFormElement>(null);
   const lastLenRef = useRef(0);
   const userScrolledUpRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+
+  // iOS Safari (iPhone のみ) でソフトキーボードが出ている間、 chat-input form を
+  // visualViewport の下端に absolute で貼り付けて、 iOS 自動パンを起こさせない
+  // ようにする。 keyboardHeight=0 のとき (= 非 iPhone / キーボード閉) は
+  // fixedBottom = {} (= 空オブジェクト) になり、 normal flex flow に戻る。
+  // ChatGPT/Claude.ai 等の主要 AI チャットも自前で visualViewport ハンドラを
+  // 書いている分野で、 これは小さな専用フック (16KB / zero deps / MIT) を使った
+  // 同等パターン。
+  const keyboardHeight = useIOsKeyboardHeight();
+  const { fixedBottom: chatInputKeyboardStyle } = useFixedStyleWithIOsKeyboard();
+
+  // chat-input form の実高さを ResizeObserver で測って CSS var に書き出す。
+  // chat-input が absolute 化したとき、 chat-scroller がその真下に空間を確保
+  // (padding-bottom = chatInputH + keyboardH) するための材料。
+  const [chatInputHeight, setChatInputHeight] = useState(0);
+  useEffect(() => {
+    const el = chatInputRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setChatInputHeight(el.offsetHeight));
+    ro.observe(el);
+    setChatInputHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  // keyboard 開いている間だけ、 chat-scroller に padding-bottom を加える。
+  // chat-input は absolute になって flex flow から外れるので、 そのままだと
+  // 最新メッセージが chat-input の下に潜って見えなくなる。
+  // padding-bottom = keyboardH + chatInputH で「chat-input の上端」 まで
+  // コンテンツを押し上げる。 keyboard 閉じてる時は 0 で副作用なし。
+  const scrollerPaddingBottom =
+    keyboardHeight > 0 ? `${keyboardHeight + chatInputHeight}px` : undefined;
 
   // 表示は server + pending を順に並べる(pending は常に末尾、ts 順)
   const displayChat = useMemo(() => {
@@ -94,6 +130,19 @@ export function ChatView({
     if (!el) return true;
     return el.scrollHeight - el.scrollTop - el.clientHeight < 64;
   };
+
+  // 末尾へ即時スクロール。 markdown / 画像の遅延レイアウトで scrollHeight が後から
+  // 伸びるケースに耐えるよう、即時 + 次フレーム + 80ms 後 の 3 回試行する。
+  // ref しか触らないので依存配列は空で OK。
+  const scrollToBottom = useCallback(() => {
+    const pin = () => {
+      const el = scrollerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    requestAnimationFrame(pin);
+    setTimeout(pin, 80);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -172,24 +221,18 @@ export function ChatView({
   // displayChat が伸びたら自動末尾追従(履歴遡り中はしない)
   useEffect(() => {
     if (displayChat.length > lastLenRef.current && !userScrolledUpRef.current) {
-      requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+      scrollToBottom();
     }
     lastLenRef.current = displayChat.length;
-  }, [displayChat.length]);
+  }, [displayChat.length, scrollToBottom]);
 
   // 状態が変化(idle → busy 等)した時にも末尾追従。ユーザが下にいたなら、
   // 新しく現れた「考え中」インジケータが見える位置に揃える。
   useEffect(() => {
     if (!userScrolledUpRef.current) {
-      requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+      scrollToBottom();
     }
-  }, [status]);
+  }, [status, scrollToBottom]);
 
   const onScroll = () => {
     userScrolledUpRef.current = !isNearBottom();
@@ -203,7 +246,10 @@ export function ChatView({
     const optimistic: ChatMessage = { role: 'user', text, ts: Date.now() };
     setPending((p) => [...p, optimistic]);
     setInput('');
+    // 送信は「ユーザが意図して末尾へ戻りたい」操作なので、
+    // useEffect 経由の auto-scroll ガードに頼らず明示的に末尾固定する。
     userScrolledUpRef.current = false;
+    scrollToBottom();
 
     setSending(true);
     setError(null);
@@ -387,6 +433,14 @@ export function ChatView({
     if (!ta) return;
     ta.style.height = 'auto';
     ta.style.height = `${ta.scrollHeight}px`;
+    // textarea の伸縮で .chat-scroller (flex:1) のビューポート高さが変わる。
+    // 末尾に居たユーザを置き去りにしないよう、入力で textarea が伸びた瞬間も
+    // 末尾追従する。手で上に遡って読んでいるユーザは userScrolledUpRef が true
+    // なので触らない。
+    if (!userScrolledUpRef.current) {
+      const el = scrollerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
   }, [input]);
 
   return (
@@ -412,7 +466,12 @@ export function ChatView({
           </button>
         </div>
       </header>
-      <div ref={scrollerRef} onScroll={onScroll} className="chat-scroller">
+      <div
+        ref={scrollerRef}
+        onScroll={onScroll}
+        className="chat-scroller"
+        style={scrollerPaddingBottom ? { paddingBottom: scrollerPaddingBottom } : undefined}
+      >
         {displayChat.length === 0 ? (
           <div className="chat-empty">{t('chatEmpty')}</div>
         ) : (
@@ -740,8 +799,14 @@ export function ChatView({
       </div>
       {error && <div className="chat-error">{t('sendErrorPrefix')}: {error}</div>}
       <form
+        ref={chatInputRef}
         className="chat-input"
         onSubmit={(e) => { e.preventDefault(); void send(); }}
+        style={
+          keyboardHeight > 0
+            ? { ...chatInputKeyboardStyle, left: 0, right: 0 }
+            : undefined
+        }
       >
         <button
           type="button"

@@ -17,6 +17,9 @@ function resolveCwd(input: string): string {
 export type Session = {
   name: string;
   created: number;
+  /** 最終アクティビティ時刻 (ms)。tmux の `session_activity` を ms 化したもの。
+   *  pane 内で何か出力があるたびに更新される。一覧の「最近触った順」ソートに使う。 */
+  activity: number;
   windows: number;
   attached: boolean;
 };
@@ -69,17 +72,18 @@ export async function listSessions(): Promise<Session[]> {
     const { stdout } = await exec('tmux', [
       'list-sessions',
       '-F',
-      '#{session_name}\t#{session_created}\t#{session_windows}\t#{session_attached}',
+      '#{session_name}\t#{session_created}\t#{session_activity}\t#{session_windows}\t#{session_attached}',
     ]);
     return stdout
       .trim()
       .split('\n')
       .filter(Boolean)
       .map((line) => {
-        const [name, created, windows, attached] = line.split('\t');
+        const [name, created, activity, windows, attached] = line.split('\t');
         return {
           name,
           created: Number(created) * 1000,
+          activity: Number(activity) * 1000,
           windows: Number(windows),
           attached: Number(attached) > 0,
         };

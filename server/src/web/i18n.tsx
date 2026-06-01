@@ -29,6 +29,8 @@ const STRINGS = {
   ccIdle:                 { en: '◯ Claude idle', ja: '◯ Claude 待機' },
   ccWaitingPermission:    { en: '⏸ Awaiting permission', ja: '⏸ 承認待ち' },
   ccWaitingQuestion:      { en: '? Awaiting answer', ja: '? 質問待ち' },
+  starSession:            { en: 'Star session', ja: 'スターをつける' },
+  unstarSession:          { en: 'Unstar session', ja: 'スターを外す' },
 
   // ── ChatView: status / empty ──
   statusBusy:             { en: 'Claude is thinking', ja: 'Claude が考えています' },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLanguage, type Language, type StringKey } from '../i18n.tsx';
 
 type ClaudeStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
@@ -6,10 +6,35 @@ type ClaudeStatus = 'idle' | 'busy' | 'waiting-permission' | 'waiting-question';
 type Session = {
   name: string;
   created: number;
+  /** ms。tmux の session_activity を ms 化したもの。「最近触った順」のソートキー。 */
+  activity: number;
   windows: number;
   attached: boolean;
   claudeStatus?: ClaudeStatus;
 };
+
+const STARRED_STORAGE_KEY = 'headlenss_starred_sessions';
+
+/** localStorage からスター済みセッション名の集合を読む。型/JSON 不正は空集合に倒す。 */
+function loadStarred(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STARRED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((v): v is string => typeof v === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveStarred(starred: Set<string>): void {
+  try {
+    localStorage.setItem(STARRED_STORAGE_KEY, JSON.stringify([...starred]));
+  } catch {
+    /* private mode 等で書けなくても UI 上の挙動は維持 */
+  }
+}
 
 function claudeIndicator(status: ClaudeStatus | undefined, t: (key: StringKey) => string): string {
   switch (status) {
@@ -27,6 +52,29 @@ export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
   const [newName, setNewName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [starred, setStarred] = useState<Set<string>>(loadStarred);
+
+  const toggleStar = useCallback((name: string) => {
+    setStarred((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      saveStarred(next);
+      return next;
+    });
+  }, []);
+
+  // スター優先 → 最終アクティビティ降順 で並べる。
+  // スター済みの中も最終アクティビティ降順にすると、よく触る pin の中でも
+  // 「今いじってるやつ」が一番上に来て自然。
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const sa = starred.has(a.name) ? 1 : 0;
+      const sb = starred.has(b.name) ? 1 : 0;
+      if (sa !== sb) return sb - sa;
+      return b.activity - a.activity;
+    });
+  }, [sessions, starred]);
 
   const refresh = async () => {
     try {
@@ -125,10 +173,19 @@ export function SessionList({ onOpen }: { onOpen: (name: string) => void }) {
         <div className="muted">{t('noSessions')}</div>
       ) : (
         <ul className="session-list">
-          {sessions.map((s) => {
+          {sortedSessions.map((s) => {
             const cc = claudeIndicator(s.claudeStatus, t);
+            const isStarred = starred.has(s.name);
             return (
               <li key={s.name}>
+                <button
+                  className={`session-star${isStarred ? ' is-starred' : ''}`}
+                  onClick={() => toggleStar(s.name)}
+                  aria-label={isStarred ? t('unstarSession') : t('starSession')}
+                  aria-pressed={isStarred}
+                >
+                  {isStarred ? '★' : '☆'}
+                </button>
                 <button className="session-open" onClick={() => onOpen(s.name)}>
                   <span className="session-name">{s.name}</span>
                   <span className="session-meta">
