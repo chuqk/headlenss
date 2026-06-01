@@ -39,6 +39,25 @@ function getTmuxWrapper(): { cmd: string; args: string[] } | null {
   return { cmd: parts[0], args: parts.slice(1) };
 }
 
+/**
+ * 新規 tmux セッションに注入する環境変数を `.env` の HEADLENSS_SESSION_ENV から読む。
+ * `KEY=VALUE` を `;` 区切りで複数指定でき、それぞれ `new-session -e KEY=VALUE` になる。
+ *   例: HEADLENSS_SESSION_ENV="TUSH_PUSH=on; GREETING=hello world"
+ * `-e` で渡すとセッション環境に入るため、headlenss が起動する `claude` も、ユーザが
+ * その pane で後から手動起動したコマンドも、後続ウィンドウも同じ値を継承する。
+ * headlenss は中身を一切解釈しない (任意のフラグを通す汎用パススルー)。
+ * 値に空白は含められるが `;` 自体は区切り文字なので含められない。
+ */
+function getSessionEnvArgs(): string[] {
+  const raw = (process.env.HEADLENSS_SESSION_ENV ?? '').trim();
+  if (!raw) return [];
+  return raw
+    .split(';')
+    .map((p) => p.trim())
+    .filter((p) => p.includes('='))
+    .flatMap((pair) => ['-e', pair]);
+}
+
 export function validateName(name: string): void {
   if (!NAME_RE.test(name)) {
     throw new Error('invalid session name (use [a-zA-Z0-9_-], max 40 chars)');
@@ -123,7 +142,10 @@ export async function createSession(
   }
 
   const wrapper = getTmuxWrapper();
-  const tmuxArgs = ['new-session', '-d', '-c', targetCwd, '-s', name];
+  const tmuxArgs = [
+    'new-session', '-d', '-c', targetCwd, '-s', name,
+    ...getSessionEnvArgs(),
+  ];
   if (wrapper) {
     await exec(wrapper.cmd, [...wrapper.args, 'tmux', ...tmuxArgs], { cwd: targetCwd });
   } else {
