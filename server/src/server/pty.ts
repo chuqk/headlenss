@@ -148,11 +148,9 @@ async function createHeadlessEntry(
 ): Promise<HeadlessEntry> {
   await requireSession(sessionName);
 
-  // クライアント独立サイズ運用: window-size manual + resize-window
-  try {
-    execFileSync('tmux', ['set-option', '-t', sessionName, 'window-size', 'manual'], { stdio: 'ignore' });
-    execFileSync('tmux', ['resize-window', '-t', sessionName, '-x', String(cols), '-y', String(rows)], { stdio: 'ignore' });
-  } catch { /* ignore */ }
+  // サイズは CC クライアント自身の refresh-client -C で制御する。
+  // session レベルの window-size manual + resize-window は ghostty 等の
+  // 通常クライアントのサイズまで巻き込むので使わない (2026-06-23)。
 
   // 新規セッション直後は描画安定を待つ
   waitForShellReady(sessionName, 500);
@@ -356,8 +354,15 @@ export function handlePtyConnection(ws: WebSocket, sessionName: string): void {
   const cleanup = (): void => {
     if (entry) {
       entry.clients.delete(ws);
-      // 最後のクライアントが抜けても entry は残す (再接続で復元できるように)
-      // ccProcess の終了でしか entry を消さない
+      if (entry.clients.size === 0) {
+        // 最後のブラウザクライアントが離れたら CC プロセスを終了して tmux クライアントを解放。
+        // 放置すると control-mode クライアントが小さいサイズで残り続け、
+        // window-size latest の ghostty 側ウィンドウを圧迫する (2026-06-23)。
+        // 再接続時は createHeadlessEntry で pane 内容から復元される。
+        try { entry.ccProcess.kill(); } catch { /* ignore */ }
+        try { entry.terminal.dispose(); } catch { /* ignore */ }
+        headlessEntries.delete(entry.sessionName);
+      }
     }
   };
   ws.on('close', cleanup);
