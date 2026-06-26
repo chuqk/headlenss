@@ -11,7 +11,7 @@ export async function resolveTmuxSessionName(pane: string): Promise<string> {
       'display-message',
       '-t', pane,
       '-p',
-      '#{session_name}',
+      '#{session_name}:#{window_name}',
     ]);
     return stdout.trim();
   } catch {

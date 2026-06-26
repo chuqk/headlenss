@@ -14,18 +14,18 @@ import type { AskQuestion, HookDecision, RespondInput, SessionStatus } from './t
 
 const exec = promisify(execFile);
 
-/** 現在 tmux server 上に存在しているセッション名集合を返す */
-async function liveTmuxSessionNames(): Promise<Set<string>> {
+/** 現在 tmux server 上に存在しているウィンドウ名集合を session:window 形式で返す */
+async function liveTmuxWindowNames(): Promise<Set<string>> {
   try {
-    const { stdout } = await exec('tmux', ['list-sessions', '-F', '#{session_name}']);
+    const { stdout } = await exec('tmux', [
+      'list-windows', '-a', '-F', '#{session_name}:#{window_name}',
+    ]);
     return new Set(stdout.trim().split('\n').filter(Boolean));
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? '';
-    // tmux server が居ない = セッション無し
     if (stderr.includes('no server running') || stderr.includes('error connecting')) {
       return new Set();
     }
-    // それ以外のエラーは安全側として空集合扱いはせず投げる
     throw err;
   }
 }
@@ -404,7 +404,7 @@ claudeRouter.get('/claude/sessions', async (c) => {
   // tmux 側の取得に失敗した場合は cleanup 自体をスキップして既存挙動を維持する。
   let liveTmux: Set<string> | null = null;
   try {
-    liveTmux = await liveTmuxSessionNames();
+    liveTmux = await liveTmuxWindowNames();
   } catch {
     liveTmux = null;
   }

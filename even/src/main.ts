@@ -208,6 +208,11 @@ let pendingSentences: string[] = []
 function pendingDisplayText(): string { return pendingSentences.join('\n') }
 function pendingSendText(): string    { return pendingSentences.join(' ') }
 function pendingHasContent(): boolean { return pendingSentences.some((s) => s.trim().length > 0) }
+/** session:window 形式ならウィンドウ名部分だけ返す。コロンなしならそのまま */
+function windowNameOf(name: string): string {
+  const i = name.indexOf(':')
+  return i >= 0 ? name.slice(i + 1) : name
+}
 let tmuxOutput = ''     // (legacy) tmux 出力 — 現状ダッシュボードとレンズには使わない
 let outputPollTimer: ReturnType<typeof setInterval> | null = null
 let outputFetchOkLogged = false
@@ -388,7 +393,7 @@ function buildG2Content(): string {
       // かかって切れる時、この空行を犠牲にして実テキストを安全域へ逃がす。
       return settings.chatBottomSpacer ? body + '\n' : body
     }
-    return `[${settings.sessionName || 'no session'}]\n${t('chatNoMsg')}`
+    return `[${windowNameOf(settings.sessionName) || 'no session'}]\n${t('chatNoMsg')}`
   }
 
   // Claude Code 承認/質問 待ちへの応答画面
@@ -418,7 +423,7 @@ function buildG2Content(): string {
     lines.push('')
     lines.push(pendingDisplayText() || '(empty)')
   } else if (phase === 'sending') {
-    lines.push(`Sending → ${settings.sessionName}`)
+    lines.push(`Sending → ${windowNameOf(settings.sessionName)}`)
     lines.push('')
     lines.push(pendingSendText().slice(0, 200))
   } else if (phase === 'unconfigured') {
@@ -471,7 +476,7 @@ function buildRootListView(): string {
     const mark = claudeStatusMark(s)
     // 既読セッションは空白で揃え、未読は '*' でマーク
     const unread = isUnread(s) ? '*' : ' '
-    lines.push(`${cursor}${s.tmuxSessionName} ${unread}${mark}`)
+    lines.push(`${cursor}${windowNameOf(s.tmuxSessionName)} ${unread}${mark}`)
   }
   return lines.join('\n')
 }
@@ -809,10 +814,10 @@ function buildG2Header(): string {
       const n = pendingSentences.length
       return n > 1 ? `${t('g2HeadPending')} (${n})` : t('g2HeadPending')
     }
-    case 'sending':      return `${t('g2HeadSending')} → ${settings.sessionName || ''}`.slice(0, 56)
+    case 'sending':      return `${t('g2HeadSending')} → ${windowNameOf(settings.sessionName) || ''}`.slice(0, 56)
     case 'cc-response':  return t('g2HeadCcResponse')
     case 'error':        return t('g2HeadError')
-    case 'idle':         return settings.sessionName || t('appName')
+    case 'idle':         return windowNameOf(settings.sessionName) || t('appName')
     default:             return t('appName')
   }
 }
@@ -904,7 +909,8 @@ async function reloadSessions(verbose = false): Promise<void> {
   try {
     lastSessions = await client.listSessions()
     if (verbose) log(`sessions: ${lastSessions.map((s) => s.name).join(', ') || '(none)'}`)
-    if (lastSessions.length > 0 && !lastSessions.some((s) => s.name === settings.sessionName)) {
+    const sessionBase = settings.sessionName.split(':')[0]
+    if (lastSessions.length > 0 && !lastSessions.some((s) => s.name === settings.sessionName || s.name === sessionBase)) {
       settings.sessionName = lastSessions[0].name
       void persistSettings()
     }

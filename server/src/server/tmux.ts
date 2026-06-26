@@ -24,7 +24,7 @@ export type Session = {
   attached: boolean;
 };
 
-const NAME_RE = /^[a-zA-Z0-9_-]{1,40}$/;
+const NAME_RE = /^[a-zA-Z0-9_-]{1,40}(:[a-zA-Z0-9_-]{1,40})?$/;
 
 /**
  * tmux new-session の前置ラッパー (`.env` の HEADLENSS_TMUX_WRAPPER から
@@ -70,9 +70,10 @@ export function validateName(name: string): void {
 export async function listSessions(): Promise<Session[]> {
   try {
     const { stdout } = await exec('tmux', [
-      'list-sessions',
+      'list-windows',
+      '-a',
       '-F',
-      '#{session_name}\t#{session_created}\t#{session_activity}\t#{session_windows}\t#{session_attached}',
+      '#{session_name}:#{window_name}\t#{session_created}\t#{window_activity}\t#{session_windows}\t#{session_attached}',
     ]);
     return stdout
       .trim()
@@ -241,7 +242,11 @@ export async function requireSession(name: string): Promise<void> {
 
 export async function killSession(name: string): Promise<void> {
   validateName(name);
-  await exec('tmux', ['kill-session', '-t', name]);
+  if (name.includes(':')) {
+    await exec('tmux', ['kill-window', '-t', name]);
+  } else {
+    await exec('tmux', ['kill-session', '-t', name]);
+  }
 }
 
 export async function sendKeys(name: string, text: string, submit = false): Promise<void> {

@@ -140,13 +140,17 @@ async function getTmuxPaneMap(): Promise<Map<number, string>> {
       'list-panes',
       '-a',
       '-F',
-      '#{pane_pid}|#{session_name}',
+      '#{pane_pid}|#{session_name}|#{window_name}',
     ]);
     const map = new Map<number, string>();
     for (const line of stdout.split('\n')) {
-      const [pidStr, name] = line.split('|');
-      const pid = Number(pidStr);
-      if (Number.isFinite(pid) && name) map.set(pid, name);
+      const parts = line.split('|');
+      if (parts.length < 3) continue;
+      const pid = Number(parts[0]);
+      const sessionName = parts[1];
+      const windowName = parts[2];
+      if (!Number.isFinite(pid) || !sessionName) continue;
+      map.set(pid, `${sessionName}:${windowName}`);
     }
     return map;
   } catch {
