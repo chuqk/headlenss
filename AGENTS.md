@@ -19,7 +19,7 @@ G2 本体で Claude Code を音声操作したい。キーボードから離れ�
 - Tailscale 接続済み (gargantua: 100.112.122.97)
 - GitHub フォーク: chuqk/headlenss (upstream: takashicompany/headlenss)
 - server/, even/ ともに npm install 済み
-- ghost (bashboard) でデーモン管理設定済み
+- bashboard 登録は **無効化中** (2026-07-02、daimon 横断監査: 起動失敗 26,977 回連続の止血で yml を外した)。セットアップ再開時は絶対パスの cwd + ラッパースクリプトで bashboard.yml を作り直す (相対 cwd・npm 直叩きが失敗ループの原因)
 
 ## 決定事項
 
